@@ -481,6 +481,7 @@ function renderQuestion() {
   }
 
   function submit(value) {
+    if (q.checked) return; // ответ на это слово уже засчитан
     const r = value.trim() ? check(value, answers, lang) : { ok: false };
     q.checked = true;
     q.results.push({ w, ok: r.ok, answer: value.trim() });
