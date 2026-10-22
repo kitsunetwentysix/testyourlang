@@ -161,6 +161,10 @@ h1, h2 { margin: 0; }
 .auth .primary { margin-top: 18px; }
 .primary:disabled { opacity: .6; }
 .loading { text-align: center; padding-top: 30vh; }
+.auth.compact { padding-top: 2vh; }
+.auth.compact h1 { font-size: 26px; }
+.auth.compact .muted { margin-top: 8px; }
+.forgot { display: block; margin: 14px auto 0; }
 
 .account { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 34px; padding: 14px 4px 0; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
 .account span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

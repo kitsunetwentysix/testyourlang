@@ -122,11 +122,19 @@ const authStorage = {
   removeItem: k => { try { localStorage.removeItem(k); sessionStorage.removeItem(k); } catch (e) { /* приватный режим */ } },
 };
 
+// Ссылка из письма «сбросить пароль» открывает сайт с #...type=recovery (или с ошибкой, если ссылка устарела).
+// Читаем до создания клиента: он сразу убирает эти параметры из адреса.
+const RECOVERY = /type=recovery/.test(location.hash);
+const LINK_ERROR = /error_code=([^&]+)/.exec(location.hash)?.[1] || null;
+const clearUrl = () => history.replaceState(null, '', location.pathname);
+
+// implicit: ссылка из письма открывается в Safari, а не в приложении — PKCE там не сработает
 const db = window.SUPABASE_URL && window.SUPABASE_KEY && window.supabase
   ? window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_KEY, {
-    auth: { storage: authStorage, storageKey: 'lv-auth', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    auth: { storage: authStorage, storageKey: 'lv-auth', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' },
   })
   : null;
+let recovering = false;
 
 let user = null;
 
@@ -225,9 +233,17 @@ const AUTH_ERRORS = [
   [/password.*(at least|short|characters)/i, 'Пароль слишком короткий — минимум 6 символов'],
   [/invalid.*email|email.*invalid/i, 'Проверь адрес почты'],
   [/rate limit|too many/i, 'Слишком много попыток, попробуй через пару минут'],
+  [/should be different|same.*password/i, 'Новый пароль должен отличаться от старого'],
+  [/not authorized|error sending/i, 'Письмо не отправилось: почта приложения ещё не настроена'],
+  [/session.*missing|auth session/i, 'Ссылка устарела — запроси новую через «Забыли пароль?»'],
   [/fetch|network/i, 'Нет связи с сервером, проверь интернет'],
 ];
 const authError = e => (AUTH_ERRORS.find(([re]) => re.test(e?.message || '')) || [, 'Не получилось: ' + (e?.message || 'неизвестная ошибка')])[1];
+
+function messenger(el) {
+  return (text, kind = 'error') => { el.textContent = text; el.className = 'auth-msg ' + (text ? kind : ''); };
+}
+const validEmail = s => /^\S+@\S+\.\S+$/.test(s);
 
 function showAuth(mode = 'login', message = '') {
   user = null;
@@ -253,21 +269,24 @@ function showAuth(mode = 'login', message = '') {
         <div id="auth-msg" class="auth-msg" role="alert"></div>
         <button class="primary" id="auth-go"></button>
       </form>
+      <button type="button" class="link-btn forgot" id="forgot">Забыли пароль?</button>
     </div>`;
 
-  const msg = document.getElementById('auth-msg');
   const go = document.getElementById('auth-go');
   const email = document.getElementById('email');
   const password = document.getElementById('password');
-  const say = (text, kind = 'error') => { msg.textContent = text; msg.className = 'auth-msg ' + (text ? kind : ''); };
+  const forgot = document.getElementById('forgot');
+  const say = messenger(document.getElementById('auth-msg'));
 
   const setMode = m => {
     mode = m;
     go.textContent = m === 'login' ? 'Войти' : 'Создать аккаунт';
     password.autocomplete = m === 'login' ? 'current-password' : 'new-password';
     password.placeholder = m === 'login' ? '' : 'Минимум 6 символов';
+    forgot.hidden = m !== 'login';
     say('');
   };
+  forgot.onclick = () => showReset(email.value.trim());
   setupSeg('mode', mode, setMode);
   setMode(mode);
   if (message) say(message, 'info');
@@ -282,7 +301,7 @@ function showAuth(mode = 'login', message = '') {
     e.preventDefault();
     const mail = email.value.trim();
     const pass = password.value;
-    if (!/^\S+@\S+\.\S+$/.test(mail)) return say('Проверь адрес почты');
+    if (!validEmail(mail)) return say('Проверь адрес почты');
     if (pass.length < 6) return say('Пароль — минимум 6 символов');
 
     ls.set(REMEMBER, document.getElementById('remember').checked ? '1' : '0');
@@ -308,6 +327,99 @@ function showAuth(mode = 'login', message = '') {
     }
   };
   email.focus();
+}
+
+// «Забыли пароль?» — письмо со ссылкой на экран нового пароля
+function showReset(prefill = '') {
+  user = null;
+  $app.innerHTML = `
+    <header class="bar"><button class="icon-btn" id="back" aria-label="Назад">‹</button></header>
+    <div class="auth compact">
+      <h1>Восстановление пароля</h1>
+      <p class="muted">Введи почту, указанную при регистрации, — пришлём ссылку, чтобы задать новый пароль.</p>
+      <form id="reset-form" novalidate>
+        <label class="field">
+          <span>Почта</span>
+          <input id="email" type="email" autocomplete="email" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" value="${esc(prefill)}">
+        </label>
+        <div id="auth-msg" class="auth-msg" role="alert"></div>
+        <button class="primary" id="auth-go">Отправить ссылку</button>
+      </form>
+    </div>`;
+
+  const go = document.getElementById('auth-go');
+  const email = document.getElementById('email');
+  const say = messenger(document.getElementById('auth-msg'));
+  document.getElementById('back').onclick = () => showAuth('login');
+
+  document.getElementById('reset-form').onsubmit = async e => {
+    e.preventDefault();
+    const mail = email.value.trim();
+    if (!validEmail(mail)) return say('Проверь адрес почты');
+    go.disabled = true;
+    go.textContent = 'Подожди…';
+    try {
+      const { error } = await db.auth.resetPasswordForEmail(mail, { redirectTo: location.origin + location.pathname });
+      if (error) throw error;
+      say(`Если аккаунт с почтой ${mail} есть, мы отправили на неё письмо. Открой ссылку из письма в ближайший час — проверь и папку «Спам».`, 'info');
+      go.textContent = 'Отправить ещё раз';
+    } catch (err) {
+      say(authError(err));
+      go.textContent = 'Отправить ссылку';
+    } finally {
+      go.disabled = false;
+    }
+  };
+  if (!prefill) email.focus();
+}
+
+// Открыта ссылка из письма: сессия восстановления уже есть, осталось задать пароль
+function showNewPassword() {
+  user = null;
+  recovering = true;
+  $app.innerHTML = `
+    <div class="auth compact">
+      <div class="logo big">§</div>
+      <h1>Новый пароль</h1>
+      <p class="muted">Придумай новый пароль для входа в Legal English.</p>
+      <form id="pw-form" novalidate>
+        <label class="field">
+          <span>Новый пароль</span>
+          <input id="password" type="password" autocomplete="new-password" placeholder="Минимум 6 символов">
+        </label>
+        <label class="field">
+          <span>Повтори пароль</span>
+          <input id="password2" type="password" autocomplete="new-password">
+        </label>
+        <div id="auth-msg" class="auth-msg" role="alert"></div>
+        <button class="primary" id="auth-go">Сохранить и войти</button>
+      </form>
+    </div>`;
+
+  const go = document.getElementById('auth-go');
+  const p1 = document.getElementById('password');
+  const p2 = document.getElementById('password2');
+  const say = messenger(document.getElementById('auth-msg'));
+
+  document.getElementById('pw-form').onsubmit = async e => {
+    e.preventDefault();
+    if (p1.value.length < 6) return say('Пароль — минимум 6 символов');
+    if (p1.value !== p2.value) return say('Пароли не совпадают');
+    go.disabled = true;
+    go.textContent = 'Подожди…';
+    try {
+      const { data, error } = await db.auth.updateUser({ password: p1.value });
+      if (error) throw error;
+      recovering = false;
+      clearUrl();
+      await enter(data.user);
+    } catch (err) {
+      say(authError(err));
+      go.disabled = false;
+      go.textContent = 'Сохранить и войти';
+    }
+  };
+  p1.focus();
 }
 
 async function enter(u) {
@@ -492,6 +604,7 @@ function renderQuestion() {
     input.placeholder = '';
     input.classList.add('locked');
     input.blur();
+    input.hidden = !value.trim(); // «Не знаю»: вводить нечего — поле убираем
     skip.hidden = true;
     go.textContent = q.i + 1 < q.items.length ? 'Дальше' : 'Результаты';
   }
@@ -573,9 +686,17 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
 (async function start() {
   if (!db) return showAuth();
   const { data } = await db.auth.getSession();
-  if (data.session) await enter(data.session.user);
-  else showAuth();
+  if (RECOVERY && data.session) showNewPassword();
+  else if (data.session) { clearUrl(); await enter(data.session.user); }
+  else if (LINK_ERROR) {
+    clearUrl();
+    showAuth('login', LINK_ERROR === 'otp_expired'
+      ? 'Ссылка из письма устарела — запроси новую через «Забыли пароль?».'
+      : 'Ссылка из письма не сработала — попробуй ещё раз.');
+  } else showAuth();
   db.auth.onAuthStateChange((event, session) => {
+    if (event === 'PASSWORD_RECOVERY') { if (!recovering) showNewPassword(); return; }
+    if (recovering) return;
     if (event === 'SIGNED_OUT' && user) { progress = emptyProgress(); showAuth('login', 'Сессия закончилась, войди ещё раз.'); }
     else if (event === 'SIGNED_IN' && session && !user) enter(session.user);
   });
