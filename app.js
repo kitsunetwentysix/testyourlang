@@ -475,7 +475,6 @@ function renderQuestion() {
           q.results[q.results.length - 1].ok = true;
           record(w, true, true);
           showFeedback({ ok: true, typo: false }, value);
-          input.focus();
         };
       }
     }
@@ -487,7 +486,11 @@ function renderQuestion() {
     q.results.push({ w, ok: r.ok, answer: value.trim() });
     record(w, r.ok);
     showFeedback(r, value.trim());
+    // Ответ принят: поле только для чтения и клавиатура прячется, дальше — кнопкой
+    input.readOnly = true;
+    input.placeholder = '';
     input.classList.add('locked');
+    input.blur();
     skip.hidden = true;
     go.textContent = q.i + 1 < q.items.length ? 'Дальше' : 'Результаты';
   }
@@ -498,8 +501,7 @@ function renderQuestion() {
     if (!input.value.trim()) return input.focus();
     submit(input.value);
   };
-  input.addEventListener('beforeinput', e => { if (q.checked) e.preventDefault(); });
-  skip.onclick = () => { submit(''); input.focus(); };
+  skip.onclick = () => submit('');
   document.getElementById('quit').onclick = () => {
     if (q.i > 0 && !confirm('Прервать тест? Результат теста не сохранится.')) return;
     showTopic(q.topic.id);
