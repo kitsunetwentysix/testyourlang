@@ -334,7 +334,7 @@ function render(html) {
 
 // ---------- переходы между экранами ----------
 // forward — вглубь (документ → урок → тест), back — обратно, next — следующий вопрос, fade — вход и выход.
-// Общие элементы (название и полоса) получают одно имя на старом и новом экране и перетекают друг в друга.
+// shared.from / shared.to — элементы, которые должны перетечь между экранами (сейчас не используется: при пуше экран едет целиком).
 const reduceMotion = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const named = new Set();
 function nameEls(pairs = []) {
@@ -358,10 +358,6 @@ function navigate(type, update, shared = {}) {
   vt.ready.catch(() => {}); // браузер может отменить анимацию — экран всё равно сменится
   vt.finished.catch(() => {}).finally(() => { delete document.documentElement.dataset.nav; clearNames(); });
 }
-// Пара «строка списка ↔ шапка экрана»: название и полоса
-const sel = (key, value) => '[data-' + key + '="' + CSS.escape(value) + '"]';
-const rowShared = s => [[s + ' .row-title', 'vt-title'], [s + ' .strip', 'vt-strip']];
-const HEAD_SHARED = [['.head h1', 'vt-title'], ['.head .strip', 'vt-strip']];
 
 // ---------- вход и регистрация ----------
 const AUTH_ERRORS = [
@@ -636,7 +632,7 @@ function showHome() {
       </footer>
     </main>`);
   $app.querySelectorAll('[data-doc]').forEach(b => {
-    b.onclick = () => navigate('forward', () => showDocument(b.dataset.doc), { from: rowShared(sel('doc', b.dataset.doc)), to: HEAD_SHARED });
+    b.onclick = () => navigate('forward', () => showDocument(b.dataset.doc));
   });
   document.getElementById('logout').onclick = logout;
 }
@@ -689,9 +685,9 @@ function showDocument(id) {
         ${legend(ds)}
       </section>
     </main>`);
-  document.getElementById('back').onclick = () => navigate('back', showHome, { from: HEAD_SHARED, to: rowShared(sel('doc', d.id)) });
+  document.getElementById('back').onclick = () => navigate('back', showHome);
   $app.querySelectorAll('[data-topic]').forEach(b => {
-    b.onclick = () => navigate('forward', () => showTopic(b.dataset.topic), { from: rowShared(sel('topic', b.dataset.topic)), to: HEAD_SHARED });
+    b.onclick = () => navigate('forward', () => showTopic(b.dataset.topic));
   });
 }
 
@@ -756,7 +752,7 @@ function showTopic(id) {
 
   setupSeg('dir', prefs.dir, v => { prefs.dir = v; });
   setupSeg('len', String(len), v => { len = +v; prefs.len = len; });
-  document.getElementById('back').onclick = () => navigate('back', () => showDocument(t.doc), { from: HEAD_SHARED, to: rowShared(sel('topic', t.id)) });
+  document.getElementById('back').onclick = () => navigate('back', () => showDocument(t.doc));
   const more = document.getElementById('more');
   if (more) more.onclick = () => { document.getElementById('glossary').innerHTML = t.words.map(glossRow).join(''); more.remove(); };
   document.getElementById('start').onclick = () => {
@@ -942,7 +938,7 @@ function showResult() {
     navigate('forward', () => startQuiz(t, q.dir, q.len, t.words));
   };
   document.getElementById('close').onclick = () => navigate('back', () => showTopic(q.topic.id));
-  document.getElementById('home').onclick = () => navigate('back', () => showDocument(q.topic.doc), { to: rowShared(sel('topic', q.topic.id)) });
+  document.getElementById('home').onclick = () => navigate('back', () => showDocument(q.topic.doc));
 }
 
 // ---------- запуск ----------

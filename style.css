@@ -40,8 +40,9 @@
   --t-press: 140ms;
   --t-hover: 180ms;
   --t-ui: 240ms;
-  --t-nav: 380ms;
-  --t-nav-exit: 180ms;
+  --t-nav: 440ms;
+  --t-next: 340ms;
+  --ease-nav: cubic-bezier(0.32, 0.72, 0, 1); /* кривая листов iOS: быстрый старт, долгое мягкое прибытие */
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -320,29 +321,32 @@ button.row:active { transform: scale(.985); border-color: var(--control); }
 ::view-transition-old(bar) { display: none; }
 ::view-transition-new(bar) { animation: none; }
 
-@keyframes vt-in { from { opacity: 0; transform: translateX(var(--vt-from)); } }
-@keyframes vt-out { to { opacity: 0; transform: translateX(var(--vt-to)); } }
+/* Пуш как в iOS: экраны непрозрачные и не полупрозрачничают друг сквозь друга.
+   Новый экран целиком наезжает поверх старого, старый немного уходит в сторону и притемняется. */
+@keyframes vt-push-in { from { transform: translateX(var(--vt-from)); } }
+@keyframes vt-push-under { to { transform: translateX(var(--vt-to)); filter: brightness(.9); } }
+@keyframes vt-pop-out { to { transform: translateX(100%); } }
+@keyframes vt-pop-under { from { transform: translateX(-28%); filter: brightness(.9); } }
 @keyframes vt-fade-in { from { opacity: 0; } }
 @keyframes vt-fade-out { to { opacity: 0; } }
 
-/* вглубь: новый экран приходит справа, старый уходит влево */
-html[data-nav="forward"]::view-transition-old(root) { --vt-to: -48px; animation: vt-out var(--t-nav-exit) var(--ease-exit) both; }
-html[data-nav="forward"]::view-transition-new(root) { --vt-from: 48px; animation: vt-in var(--t-nav) var(--ease-out) 90ms both; }
-/* назад: зеркально */
-html[data-nav="back"]::view-transition-old(root) { --vt-to: 48px; animation: vt-out var(--t-nav-exit) var(--ease-exit) both; }
-html[data-nav="back"]::view-transition-new(root) { --vt-from: -48px; animation: vt-in var(--t-nav) var(--ease-out) 90ms both; }
-/* следующий вопрос: короче и ближе, как перелистнуть карточку */
-html[data-nav="next"]::view-transition-old(root) { --vt-to: -28px; animation: vt-out 150ms var(--ease-exit) both; }
-html[data-nav="next"]::view-transition-new(root) { --vt-from: 28px; animation: vt-in 300ms var(--ease-out) 40ms both; }
-/* вход и выход из аккаунта */
-html[data-nav="fade"]::view-transition-old(root) { animation: vt-fade-out var(--t-nav-exit) ease both; }
-html[data-nav="fade"]::view-transition-new(root) { animation: vt-fade-in var(--t-nav) ease both; }
+/* без «сложения яркости» по умолчанию: оно и давало засвеченное наслоение */
+html[data-nav]::view-transition-old(root),
+html[data-nav]::view-transition-new(root) { mix-blend-mode: normal; animation-duration: var(--t-nav); animation-timing-function: var(--ease-nav); animation-fill-mode: both; }
+html[data-nav]::view-transition-new(root) { background: var(--ground); }
 
-/* Общие элементы: название урока и его полоса перетекают из строки списка в шапку экрана и обратно */
-::view-transition-group(vt-title),
-::view-transition-group(vt-strip) { animation-duration: var(--t-nav); animation-timing-function: var(--ease-out); }
-::view-transition-old(vt-title) { display: none; }
-::view-transition-new(vt-title) { animation: none; object-fit: none; object-position: left top; }
+/* вглубь: новый сверху, приезжает справа; старый уезжает на четверть влево */
+html[data-nav="forward"]::view-transition-new(root) { --vt-from: 100%; animation-name: vt-push-in; }
+html[data-nav="forward"]::view-transition-old(root) { --vt-to: -28%; animation-name: vt-push-under; }
+/* назад: текущий экран сверху и уезжает вправо, открывая предыдущий */
+html[data-nav="back"]::view-transition-old(root) { z-index: 1; animation-name: vt-pop-out; }
+html[data-nav="back"]::view-transition-new(root) { animation-name: vt-pop-under; }
+/* следующий вопрос: тот же пуш, но короче */
+html[data-nav="next"]::view-transition-new(root) { --vt-from: 100%; animation-name: vt-push-in; animation-duration: var(--t-next); }
+html[data-nav="next"]::view-transition-old(root) { --vt-to: -28%; animation-name: vt-push-under; animation-duration: var(--t-next); }
+/* вход и выход из аккаунта: обычное растворение одной длины */
+html[data-nav="fade"]::view-transition-old(root) { animation: vt-fade-out var(--t-ui) ease both; }
+html[data-nav="fade"]::view-transition-new(root) { animation: vt-fade-in var(--t-ui) ease both; }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
