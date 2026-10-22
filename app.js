@@ -10,7 +10,8 @@ function plural(n, one, few, many) {
   if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return few;
   return many;
 }
-const words = n => n + ' ' + plural(n, 'слово', 'слова', 'слов');
+const terms = n => n + ' ' + plural(n, 'термин', 'термина', 'терминов');
+const lessons = n => n + ' ' + plural(n, 'урок', 'урока', 'уроков');
 
 function shuffle(a) {
   for (let i = a.length - 1; i > 0; i--) {
@@ -25,6 +26,11 @@ const ls = {
   set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* приватный режим */ } },
   del(k) { try { localStorage.removeItem(k); } catch (e) { /* приватный режим */ } },
   json(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
+};
+
+const ICON = {
+  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
+  close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
 };
 
 // ---------- проверка ответа ----------
@@ -75,12 +81,23 @@ function check(input, answers, lang) {
   return { ok: typo, typo };
 }
 
-// ---------- данные ----------
-const TOPICS = (window.TOPICS || []).map(t => ({
-  ...t,
-  words: t.words.map(w => ({ en: list(w.en), ru: list(w.ru), note: w.note || '', topic: t.id })),
+// ---------- данные: документы → темы (уроки) → термины ----------
+const DOCUMENTS = (window.DOCUMENTS || []).map(d => ({
+  ...d,
+  topics: d.topics.map(t => ({
+    ...t,
+    doc: d.id,
+    words: t.words.map(w => ({ en: list(w.en), ru: list(w.ru), note: w.note || '', topic: t.id })),
+  })),
 }));
+const TOPICS = DOCUMENTS.flatMap(d => d.topics);
+const docWords = d => d.topics.flatMap(t => t.words);
 const wordKey = w => w.topic + '|' + w.en[0];
+
+// «Урок 1 · Договорное право» → метка урока и название
+const lessonOf = t => (t.title.includes(' · ') ? t.title.split(' · ')[0] : '');
+const nameOf = t => (t.title.includes(' · ') ? t.title.split(' · ').slice(1).join(' · ') : t.title);
+const originalOf = t => (t.description || '').split(' · ')[0];
 
 // Все ответы словаря — чтобы не засчитывать соседний термин как опечатку
 const KNOWN = { en: new Set(), ru: new Set() };
@@ -211,18 +228,80 @@ function record(w, ok, override) {
   save();
 }
 
-const mistakeWords = () => TOPICS.flatMap(t => t.words).filter(w => progress.stats[wordKey(w)]?.last === 'bad');
-const MISTAKES = '__mistakes';
+// Состояние термина по последнему ответу: выучен, с ошибкой или ещё не встречался
+const stateOf = w => progress.stats[wordKey(w)]?.last || '';
+function summary(ws) {
+  const s = { total: ws.length, ok: 0, bad: 0, none: 0, answers: 0, correct: 0 };
+  for (const w of ws) {
+    const st = progress.stats[wordKey(w)];
+    if (st?.last === 'ok') s.ok++;
+    else if (st?.last === 'bad') s.bad++;
+    else s.none++;
+    if (st) { s.answers += st.ok + st.bad; s.correct += st.ok; }
+  }
+  return s;
+}
+
+// Подпись приложения: полоса урока — по клетке на каждый термин, выученные | с ошибкой | не встречались
+function strip(ws, big = false) {
+  const s = summary(ws);
+  const html = [
+    ...Array(s.ok).fill('<i class="ok"></i>'),
+    ...Array(s.bad).fill('<i class="bad"></i>'),
+    ...Array(s.none).fill('<i></i>'),
+  ].join('');
+  const gap = ws.length > 40 ? 1 : 2;
+  return `<div class="strip${big ? ' big' : ''}" style="gap:${gap}px" role="img"
+    aria-label="${s.ok} выучено, ${s.bad} с ошибкой, ${s.none} не встречались">${html}</div>`;
+}
+// Документ целиком: та же полоса, но сегментами, чтобы 200+ клеток не слиплись
+function docStrip(ws) {
+  const s = summary(ws);
+  const seg = (n, cls) => (n ? `<i class="${cls}" style="flex:${n} 1 0"></i>` : '');
+  return `<div class="strip" role="img" aria-label="${s.ok} выучено, ${s.bad} с ошибкой, ${s.none} не встречались">${seg(s.ok, 'ok')}${seg(s.bad, 'bad')}${seg(s.none, '')}</div>`;
+}
+const legend = s => `
+  <div class="legend">
+    <span><i class="ok"></i><b>${s.ok}</b> выучено</span>
+    <span><i class="bad"></i><b>${s.bad}</b> с ошибкой</span>
+    <span><i></i><b>${s.none}</b> не встречались</span>
+  </div>`;
+
+const MISTAKES = '__mistakes:';
+const mistakeWords = docId => TOPICS.filter(t => t.doc === docId).flatMap(t => t.words).filter(w => stateOf(w) === 'bad');
 function findTopic(id) {
-  if (id === MISTAKES) {
+  if (id.startsWith(MISTAKES)) {
+    const doc = id.slice(MISTAKES.length);
     return {
-      id: MISTAKES,
+      id,
+      doc,
       title: 'Работа над ошибками',
-      description: 'Слова, в которых была ошибка при последнем ответе. Ответишь верно — слово уйдёт из списка.',
-      words: mistakeWords(),
+      description: 'Термины с ошибкой в последнем ответе. Ответишь верно, и термин уйдёт из списка',
+      words: mistakeWords(doc),
     };
   }
   return TOPICS.find(t => t.id === id);
+}
+
+// ---------- оболочка ----------
+function bar({ left = '', title = '', right = '', brand = false } = {}) {
+  if (brand) {
+    return `<header class="bar"><div class="bar-brand"><span class="mark" aria-hidden="true">§</span>Legal English</div><div>${right}</div></header>`;
+  }
+  return `<header class="bar"><div>${left}</div><div class="bar-title">${esc(title)}</div><div>${right}</div></header>`;
+}
+const backBtn = (label = 'Назад') => `<button class="icon-btn" id="back" aria-label="${label}">${ICON.back}</button>`;
+
+function setupSeg(id, value, onChange) {
+  const btns = [...document.getElementById(id).children];
+  const paint = v => btns.forEach(b => { b.classList.toggle('on', b.dataset.v === v); b.setAttribute('aria-pressed', b.dataset.v === v); });
+  paint(value);
+  btns.forEach(b => { b.onclick = () => { paint(b.dataset.v); onChange(b.dataset.v); }; });
+}
+
+function render(html) {
+  $app.innerHTML = html;
+  window.scrollTo(0, 0);
 }
 
 // ---------- вход и регистрация ----------
@@ -244,33 +323,38 @@ function messenger(el) {
   return (text, kind = 'error') => { el.textContent = text; el.className = 'auth-msg ' + (text ? kind : ''); };
 }
 const validEmail = s => /^\S+@\S+\.\S+$/.test(s);
+const emailField = (value = '') => `
+  <label class="field">
+    <span class="label">Почта</span>
+    <input class="input" id="email" type="email" autocomplete="email" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" value="${esc(value)}">
+  </label>`;
 
 function showAuth(mode = 'login', message = '') {
   user = null;
-  $app.innerHTML = `
-    <div class="auth">
-      <div class="logo big">§</div>
-      <h1>Legal English</h1>
-      <p class="muted">Тесты по юридическому английскому</p>
-      <div class="seg" id="mode">
-        <button type="button" data-v="login">Вход</button>
-        <button type="button" data-v="signup">Регистрация</button>
+  const total = TOPICS.reduce((n, t) => n + t.words.length, 0);
+  render(`
+    <main class="page">
+      <div class="auth">
+        <div class="mark" aria-hidden="true">§</div>
+        <h1 class="greeting">Legal English</h1>
+        <p class="subline">Тесты по юридическому английскому по твоему учебнику: ${terms(total)} с переводом в обе стороны.</p>
+        <div class="seg" id="mode">
+          <button type="button" data-v="login">Вход</button>
+          <button type="button" data-v="signup">Регистрация</button>
+        </div>
+        <form id="auth-form" novalidate>
+          ${emailField()}
+          <label class="field">
+            <span class="label">Пароль</span>
+            <input class="input" id="password" type="password" minlength="6">
+          </label>
+          <label class="check"><input type="checkbox" id="remember" ${remember() ? 'checked' : ''}> Запомнить меня на этом устройстве</label>
+          <div id="auth-msg" class="auth-msg" role="alert"></div>
+          <button class="btn primary" id="auth-go"></button>
+        </form>
+        <p class="center"><button type="button" class="text-btn" id="forgot">Забыли пароль?</button></p>
       </div>
-      <form id="auth-form" novalidate>
-        <label class="field">
-          <span>Почта</span>
-          <input id="email" type="email" autocomplete="email" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" required>
-        </label>
-        <label class="field">
-          <span>Пароль</span>
-          <input id="password" type="password" minlength="6" required>
-        </label>
-        <label class="check"><input type="checkbox" id="remember" ${remember() ? 'checked' : ''}> Запомнить меня на этом устройстве</label>
-        <div id="auth-msg" class="auth-msg" role="alert"></div>
-        <button class="primary" id="auth-go"></button>
-      </form>
-      <button type="button" class="link-btn forgot" id="forgot">Забыли пароль?</button>
-    </div>`;
+    </main>`);
 
   const go = document.getElementById('auth-go');
   const email = document.getElementById('email');
@@ -326,26 +410,24 @@ function showAuth(mode = 'login', message = '') {
       if (go.textContent === 'Подожди…') setMode(mode);
     }
   };
-  email.focus();
 }
 
 // «Забыли пароль?» — письмо со ссылкой на экран нового пароля
 function showReset(prefill = '') {
   user = null;
-  $app.innerHTML = `
-    <header class="bar"><button class="icon-btn" id="back" aria-label="Назад">‹</button></header>
-    <div class="auth compact">
-      <h1>Восстановление пароля</h1>
-      <p class="muted">Введи почту, указанную при регистрации, — пришлём ссылку, чтобы задать новый пароль.</p>
-      <form id="reset-form" novalidate>
-        <label class="field">
-          <span>Почта</span>
-          <input id="email" type="email" autocomplete="email" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" value="${esc(prefill)}">
-        </label>
-        <div id="auth-msg" class="auth-msg" role="alert"></div>
-        <button class="primary" id="auth-go">Отправить ссылку</button>
-      </form>
-    </div>`;
+  render(`
+    ${bar({ left: backBtn(), title: 'Пароль' })}
+    <main class="page">
+      <div class="auth">
+        <h1 class="title">Восстановление пароля</h1>
+        <p class="subline">Введи почту, указанную при регистрации, — пришлём ссылку, чтобы задать новый пароль.</p>
+        <form id="reset-form" novalidate>
+          ${emailField(prefill)}
+          <div id="auth-msg" class="auth-msg" role="alert"></div>
+          <button class="btn primary" id="auth-go">Отправить ссылку</button>
+        </form>
+      </div>
+    </main>`);
 
   const go = document.getElementById('auth-go');
   const email = document.getElementById('email');
@@ -370,31 +452,32 @@ function showReset(prefill = '') {
       go.disabled = false;
     }
   };
-  if (!prefill) email.focus();
 }
 
 // Открыта ссылка из письма: сессия восстановления уже есть, осталось задать пароль
 function showNewPassword() {
   user = null;
   recovering = true;
-  $app.innerHTML = `
-    <div class="auth compact">
-      <div class="logo big">§</div>
-      <h1>Новый пароль</h1>
-      <p class="muted">Придумай новый пароль для входа в Legal English.</p>
-      <form id="pw-form" novalidate>
-        <label class="field">
-          <span>Новый пароль</span>
-          <input id="password" type="password" autocomplete="new-password" placeholder="Минимум 6 символов">
-        </label>
-        <label class="field">
-          <span>Повтори пароль</span>
-          <input id="password2" type="password" autocomplete="new-password">
-        </label>
-        <div id="auth-msg" class="auth-msg" role="alert"></div>
-        <button class="primary" id="auth-go">Сохранить и войти</button>
-      </form>
-    </div>`;
+  render(`
+    <main class="page">
+      <div class="auth">
+        <div class="mark" aria-hidden="true">§</div>
+        <h1 class="title">Новый пароль</h1>
+        <p class="subline">Придумай новый пароль для входа в Legal English.</p>
+        <form id="pw-form" novalidate>
+          <label class="field">
+            <span class="label">Новый пароль</span>
+            <input class="input" id="password" type="password" autocomplete="new-password" placeholder="Минимум 6 символов">
+          </label>
+          <label class="field">
+            <span class="label">Повтори пароль</span>
+            <input class="input" id="password2" type="password" autocomplete="new-password">
+          </label>
+          <div id="auth-msg" class="auth-msg" role="alert"></div>
+          <button class="btn primary" id="auth-go">Сохранить и войти</button>
+        </form>
+      </div>
+    </main>`);
 
   const go = document.getElementById('auth-go');
   const p1 = document.getElementById('password');
@@ -419,13 +502,12 @@ function showNewPassword() {
       go.textContent = 'Сохранить и войти';
     }
   };
-  p1.focus();
 }
 
 async function enter(u) {
   if (user?.id === u.id) return;
   user = u;
-  $app.innerHTML = '<p class="loading muted">Загружаю прогресс…</p>';
+  render('<p class="loading">Загружаю прогресс…</p>');
   await loadProgress();
   showHome();
 }
@@ -438,106 +520,208 @@ async function logout() {
   showAuth();
 }
 
-// ---------- экраны ----------
-let quiz = null;
-
-function badge(label, v) {
-  if (v == null) return '';
-  return `<span class="badge ${v >= 90 ? 'good' : v >= 60 ? 'mid' : 'low'}">${label} ${v}%</span>`;
+// ---------- главная: документы ----------
+function greeting() {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 12) return 'Доброе утро';
+  if (h >= 12 && h < 18) return 'Добрый день';
+  if (h >= 18 && h < 23) return 'Добрый вечер';
+  return 'Доброй ночи';
 }
 
 function showHome() {
   quiz = null;
-  const total = TOPICS.reduce((n, t) => n + t.words.length, 0);
-  const mist = mistakeWords().length;
-  $app.innerHTML = `
-    <header class="home-head">
-      <div class="logo">§</div>
-      <div>
-        <h1>Legal English</h1>
-        <p class="muted">${TOPICS.length} ${plural(TOPICS.length, 'тема', 'темы', 'тем')} · ${words(total)}</p>
+  const all = DOCUMENTS.flatMap(docWords);
+  const s = summary(all);
+  const fact = s.bad
+    ? `<b>${terms(s.bad)}</b> ${plural(s.bad, 'ждёт', 'ждут', 'ждут')} повторения. Они собраны в «Работе над ошибками» внутри документа.`
+    : s.ok
+      ? `Выучено <b>${s.ok} из ${terms(s.total)}</b>. Ошибок к повторению нет.`
+      : 'Выбери документ и пройди первый тест, прогресс появится здесь.';
+  const accuracy = s.answers ? Math.round((s.correct / s.answers) * 100) : null;
+
+  render(`
+    ${bar({ brand: true })}
+    <main class="page">
+      <div class="head">
+        <h1 class="greeting">${greeting()}</h1>
+        <p class="subline">${fact}</p>
       </div>
-    </header>
-    ${mist ? `
-      <button class="card mistakes" data-topic="${MISTAKES}">
-        <div class="card-title">Работа над ошибками</div>
-        <div class="card-meta">${words(mist)} на повторение</div>
-      </button>` : ''}
-    <h2 class="section">Темы</h2>
-    <div class="topics">
-      ${TOPICS.map(t => `
-        <button class="card" data-topic="${esc(t.id)}">
-          <div class="card-title">${esc(t.title)}</div>
-          <div class="card-meta">
-            <span>${words(t.words.length)}</span>
-            ${badge('EN→RU', progress.best[t.id + ':en-ru'])}
-            ${badge('RU→EN', progress.best[t.id + ':ru-en'])}
-          </div>
-        </button>`).join('') || '<p class="muted">Пока нет тем.</p>'}
-    </div>
-    <footer class="account">
-      <span>${esc(user.email || '')}</span>
-      <button class="link-btn" id="logout">Выйти</button>
-    </footer>`;
-  $app.querySelectorAll('[data-topic]').forEach(b => { b.onclick = () => showTopic(b.dataset.topic); });
+      <section class="tiles" aria-label="Итоги">
+        <div class="tile"><span class="tile-label">Выучено</span><span class="tile-value">${s.ok}<small> из ${s.total}</small></span><span class="tile-note">последний ответ верный</span></div>
+        <div class="tile"><span class="tile-label">На повторение</span><span class="tile-value">${s.bad}</span><span class="tile-note">${s.bad ? 'ошибка в последнем ответе' : 'ошибок нет'}</span></div>
+        <div class="tile"><span class="tile-label">Ответов</span><span class="tile-value">${s.answers}</span><span class="tile-note">за всё время</span></div>
+        <div class="tile"><span class="tile-label">Точность</span><span class="tile-value${accuracy == null ? ' dash' : ''}">${accuracy == null ? '—' : accuracy + '%'}</span><span class="tile-note">${accuracy == null ? 'ещё не было ответов' : 'верных ответов'}</span></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>Документы</h2><span class="chip">${DOCUMENTS.length}</span></div>
+        <div class="rows">
+          ${DOCUMENTS.map(d => {
+            const ws = docWords(d);
+            const ds = summary(ws);
+            return `
+              <button class="row" data-doc="${esc(d.id)}">
+                <div>
+                  <div class="row-title">${esc(d.title)}</div>
+                  <div class="row-sub">${lessons(d.topics.length)} · ${terms(ds.total)}</div>
+                </div>
+                <div class="row-figure">${Math.round((ds.ok / ds.total) * 100)}%<small>выучено</small></div>
+                ${docStrip(ws)}
+              </button>`;
+          }).join('') || '<p class="empty">Документов пока нет.</p>'}
+        </div>
+      </section>
+      <footer class="account">
+        <span>${esc(user.email || '')}</span>
+        <button class="text-btn" id="logout">Выйти</button>
+      </footer>
+    </main>`);
+  $app.querySelectorAll('[data-doc]').forEach(b => { b.onclick = () => showDocument(b.dataset.doc); });
   document.getElementById('logout').onclick = logout;
-  window.scrollTo(0, 0);
 }
 
-function setupSeg(id, value, onChange) {
-  const btns = [...document.getElementById(id).children];
-  const paint = v => btns.forEach(b => { b.classList.toggle('on', b.dataset.v === v); b.setAttribute('aria-pressed', b.dataset.v === v); });
-  paint(value);
-  btns.forEach(b => { b.onclick = () => { paint(b.dataset.v); onChange(b.dataset.v); }; });
+// ---------- документ: его уроки ----------
+function showDocument(id) {
+  quiz = null;
+  const d = DOCUMENTS.find(x => x.id === id);
+  if (!d) return showHome();
+  const ws = docWords(d);
+  const ds = summary(ws);
+  const best = (t, dir) => progress.best[t.id + ':' + dir];
+  const pct = v => (v == null ? '<span class="dash">—</span>' : v + '%');
+
+  render(`
+    ${bar({ left: backBtn('К документам'), title: 'Документы' })}
+    <main class="page">
+      <div class="head">
+        <h1 class="title">${esc(d.title)}</h1>
+        <p class="subline">${esc(d.description || '')} · ${lessons(d.topics.length)} · ${terms(ds.total)}</p>
+      </div>
+      ${ds.bad ? `
+        <section class="panel">
+          <div class="panel-head"><h2>Работа над ошибками</h2><span class="chip">${ds.bad}</span></div>
+          <button class="row" data-topic="${MISTAKES + d.id}">
+            <div>
+              <div class="row-title">Повторить ${terms(ds.bad)}</div>
+              <div class="row-sub">С ошибкой в последнем ответе, из всех уроков документа</div>
+            </div>
+            <div class="row-figure">${ds.bad}<small>${plural(ds.bad, 'термин', 'термина', 'терминов')}</small></div>
+          </button>
+        </section>` : ''}
+      <section class="panel">
+        <div class="panel-head"><h2>Уроки</h2><span class="chip">${d.topics.length}</span><span class="aside">лучший результат</span></div>
+        <div class="rows-2">
+          ${d.topics.map(t => `
+            <button class="row" data-topic="${esc(t.id)}">
+              <div>
+                <div class="row-title">${esc(nameOf(t))}</div>
+                <div class="row-sub">${esc(lessonOf(t))} · ${esc(originalOf(t))} · ${terms(t.words.length)}</div>
+              </div>
+              <div class="row-figure pair">
+                <span>${pct(best(t, 'en-ru'))}<small>EN → RU</small></span>
+                <span>${pct(best(t, 'ru-en'))}<small>RU → EN</small></span>
+              </div>
+              ${strip(t.words)}
+            </button>`).join('')}
+        </div>
+        ${legend(ds)}
+      </section>
+    </main>`);
+  document.getElementById('back').onclick = showHome;
+  $app.querySelectorAll('[data-topic]').forEach(b => { b.onclick = () => showTopic(b.dataset.topic); });
 }
+
+// ---------- урок: настройка теста и словарь ----------
+const GLOSSARY_CAP = 12;
 
 function showTopic(id) {
+  quiz = null;
   const t = findTopic(id);
-  if (!t || !t.words.length) return showHome();
+  if (!t) return showHome();
+  if (!t.words.length) return showDocument(t.doc);
+  const isMistakes = id.startsWith(MISTAKES);
   const prefs = progress.prefs;
   const lens = [10, 20].filter(n => n < t.words.length).concat(0);
   let len = lens.includes(prefs.len) ? prefs.len : 0;
+  const s = summary(t.words);
+  const best = dir => progress.best[t.id + ':' + dir];
+  const doc = DOCUMENTS.find(d => d.id === t.doc);
+  const glossRow = w => `
+    <li>
+      <i class="dot ${stateOf(w)}" aria-label="${{ ok: 'выучен', bad: 'с ошибкой' }[stateOf(w)] || 'не встречался'}"></i>
+      <b lang="en">${esc(w.en.join(' / '))}</b>
+      <span>${esc(w.ru.join('; '))}</span>
+      ${w.note ? `<small>${esc(w.note)}</small>` : ''}
+    </li>`;
 
-  $app.innerHTML = `
-    <header class="bar"><button class="icon-btn" id="back" aria-label="Назад">‹</button></header>
-    <h1 class="topic-title">${esc(t.title)}</h1>
-    ${t.description ? `<p class="muted">${esc(t.description)}</p>` : ''}
-    <div class="field-label">Направление</div>
-    <div class="seg" id="dir">
-      <button data-v="en-ru">EN → RU</button>
-      <button data-v="ru-en">RU → EN</button>
-    </div>
-    <div class="field-label">Сколько слов</div>
-    <div class="seg" id="len">
-      ${lens.map(n => `<button data-v="${n}">${n || 'Все · ' + t.words.length}</button>`).join('')}
-    </div>
-    <button class="primary" id="start">Начать тест</button>
-    <details class="vocab">
-      <summary>Словарь темы · ${t.words.length}</summary>
-      <ul>
-        ${t.words.map(w => `
-          <li>
-            <b>${esc(w.en.join(' / '))}</b>
-            <span>${esc(w.ru.join('; '))}</span>
-            ${w.note ? `<small>${esc(w.note)}</small>` : ''}
-          </li>`).join('')}
-      </ul>
-    </details>`;
+  render(`
+    ${bar({ left: backBtn('К урокам'), title: doc ? doc.title : '' })}
+    <main class="page">
+      <div class="head">
+        <h1 class="title">${esc(isMistakes ? t.title : nameOf(t))}</h1>
+        <p class="subline">${isMistakes ? esc(t.description) : `${esc(lessonOf(t))} · ${esc(originalOf(t))} · ${terms(t.words.length)}`}</p>
+        <div style="margin-top:18px">${strip(t.words, true)}${legend(s)}</div>
+      </div>
+      <div class="grid">
+        <section class="panel span-12">
+          <div class="panel-head"><h2>Тест</h2></div>
+          <div class="stack test-grid">
+            <div>
+              <span class="label">Направление</span>
+              <div class="seg" id="dir"><button data-v="en-ru">EN → RU</button><button data-v="ru-en">RU → EN</button></div>
+            </div>
+            <div>
+              <span class="label">Сколько терминов</span>
+              <div class="seg" id="len">${lens.map(n => `<button data-v="${n}">${n || 'Все ' + t.words.length}</button>`).join('')}</div>
+            </div>
+            <button class="btn primary" id="start">Начать тест</button>
+          </div>
+          ${isMistakes ? '' : `
+            <div class="best">
+              <div><span class="tile-label">Лучший EN → RU</span><div class="tile-value${best('en-ru') == null ? ' dash' : ''}">${best('en-ru') == null ? '—' : best('en-ru') + '%'}</div></div>
+              <div><span class="tile-label">Лучший RU → EN</span><div class="tile-value${best('ru-en') == null ? ' dash' : ''}">${best('ru-en') == null ? '—' : best('ru-en') + '%'}</div></div>
+            </div>`}
+        </section>
+        <section class="panel span-12">
+          <div class="panel-head"><h2>Словарь урока</h2><span class="chip">${t.words.length}</span></div>
+          <ul class="glossary" id="glossary">${t.words.slice(0, GLOSSARY_CAP).map(glossRow).join('')}</ul>
+          ${t.words.length > GLOSSARY_CAP ? `<button class="btn small more" id="more">Показать все ${t.words.length}</button>` : ''}
+        </section>
+      </div>
+    </main>`);
 
   setupSeg('dir', prefs.dir, v => { prefs.dir = v; });
   setupSeg('len', String(len), v => { len = +v; prefs.len = len; });
-  document.getElementById('back').onclick = showHome;
+  document.getElementById('back').onclick = () => showDocument(t.doc);
+  const more = document.getElementById('more');
+  if (more) more.onclick = () => { document.getElementById('glossary').innerHTML = t.words.map(glossRow).join(''); more.remove(); };
   document.getElementById('start').onclick = () => {
     save();
     startQuiz(t, prefs.dir, len, t.words);
   };
-  window.scrollTo(0, 0);
 }
+
+// ---------- тест ----------
+let quiz = null;
 
 function startQuiz(topic, dir, len, pool) {
   const items = shuffle([...pool]);
   quiz = { topic, dir, len, items: len ? items.slice(0, len) : items, i: 0, results: [], checked: false };
   renderQuestion();
+}
+
+// Термин крупно, но без переноса посреди слова: уменьшаем кегль, пока самое длинное слово не влезет
+function fitWord(el) {
+  const max = window.innerWidth >= 900 ? 40 : 34;
+  const min = 20;
+  let size = max;
+  el.classList.remove('hyph');
+  el.style.fontSize = size + 'px';
+  while (el.scrollWidth > el.clientWidth + 1 && size > min) {
+    size -= 1;
+    el.style.fontSize = size + 'px';
+  }
+  if (el.scrollWidth > el.clientWidth + 1) el.classList.add('hyph'); // даже 20px не влезает — переносим по слогам
 }
 
 function renderQuestion() {
@@ -550,37 +734,45 @@ function renderQuestion() {
 
   $app.innerHTML = `
     <header class="bar">
-      <button class="icon-btn" id="quit" aria-label="Выйти">✕</button>
-      <div class="progress"><div style="width:${(q.i / q.items.length) * 100}%"></div></div>
-      <span class="count">${q.i + 1}/${q.items.length}</span>
+      <div><button class="icon-btn" id="quit" aria-label="Выйти из теста">${ICON.close}</button></div>
+      <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${q.items.length}" aria-valuenow="${q.i}"><div style="width:${(q.i / q.items.length) * 100}%"></div></div>
+      <div class="count">${q.i + 1}/${q.items.length}</div>
     </header>
-    <div class="q">
-      <div class="q-label">${toRu ? 'Переведи на русский' : 'Translate into English'}</div>
-      <div class="q-word" lang="${toRu ? 'en' : 'ru'}">${esc(toRu ? w.en.join(' / ') : w.ru.join('; '))}</div>
-      ${w.note ? `<div class="q-note">${esc(w.note)}</div>` : ''}
-    </div>
-    <div id="fb" aria-live="polite"></div>
-    <form id="form" autocomplete="off">
-      <input id="answer" type="text" lang="${lang}" placeholder="${toRu ? 'Твой ответ' : 'Your answer'}"
-        autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" enterkeyhint="go">
-      <button class="primary" id="go">Проверить</button>
-    </form>
-    <button class="ghost" id="skip">Не знаю</button>`;
+    <main class="page">
+      <div class="quiz">
+        <div class="q">
+          <div class="q-label">${toRu ? 'Переведи на русский' : 'Translate into English'}</div>
+          <h1 class="q-word" id="word" lang="${toRu ? 'en' : 'ru'}">${esc(toRu ? w.en.join(' / ') : w.ru.join('; '))}</h1>
+          ${w.note ? `<div class="q-note">${esc(w.note)}</div>` : ''}
+        </div>
+        <div id="fb" aria-live="polite"></div>
+        <form id="form" autocomplete="off">
+          <label class="label" for="answer" hidden>Ответ</label>
+          <input class="input" id="answer" type="text" lang="${lang}" placeholder="${toRu ? 'Твой ответ' : 'Your answer'}"
+            autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" enterkeyhint="go">
+          <button class="btn primary" id="go">Проверить</button>
+        </form>
+        <p class="center"><button class="text-btn" id="skip">Не знаю</button></p>
+      </div>
+    </main>`;
 
   const input = document.getElementById('answer');
   const go = document.getElementById('go');
   const skip = document.getElementById('skip');
   const fb = document.getElementById('fb');
+  const word = document.getElementById('word');
+  fitWord(word);
+  if (document.fonts) document.fonts.ready.then(() => { if (word.isConnected) fitWord(word); });
 
   function showFeedback(r, value) {
     const right = `<div class="right">${esc(shown.join('; '))}</div>`;
     if (r.ok && !r.typo) {
-      fb.innerHTML = `<div class="fb ok"><b class="head">Верно!</b>${shown.length > 1 || /\(/.test(shown[0]) ? right : ''}</div>`;
+      fb.innerHTML = `<div class="fb ok"><b class="head">Верно</b>${shown.length > 1 || /\(/.test(shown[0]) ? right : ''}</div>`;
     } else if (r.ok) {
       fb.innerHTML = `<div class="fb warn"><b class="head">Засчитано, но с опечаткой</b>${right}</div>`;
     } else {
       fb.innerHTML = `<div class="fb bad"><b class="head">${value ? 'Неверно' : 'Правильный ответ'}</b>${right}
-        ${value ? '<button type="button" class="link" id="override">Мой ответ тоже верный — засчитать</button>' : ''}</div>`;
+        ${value ? '<button type="button" class="text-btn" id="override">Мой ответ тоже верный, засчитать</button>' : ''}</div>`;
       const ov = document.getElementById('override');
       if (ov) {
         ov.onclick = () => {
@@ -637,45 +829,53 @@ function showResult() {
   const pct = Math.round((okCount / q.results.length) * 100);
   const wrong = q.results.filter(r => !r.ok);
 
-  if (q.topic.id !== MISTAKES) {
+  if (!q.topic.id.startsWith(MISTAKES)) {
     const key = q.topic.id + ':' + q.dir;
     progress.best[key] = Math.max(progress.best[key] || 0, pct);
     save();
   }
   logAttempt(q.topic.id, q.dir, q.results.length, okCount);
-  const verdict = pct === 100 ? 'Идеально!' : pct >= 90 ? 'Отличный результат' : pct >= 70 ? 'Хорошо, ещё немного практики' : 'Стоит повторить';
+  const verdict = pct === 100 ? 'Без единой ошибки' : pct >= 90 ? 'Отличный результат' : pct >= 70 ? 'Хорошо, ещё немного практики' : 'Стоит повторить';
+  const name = q.topic.id.startsWith(MISTAKES) ? q.topic.title : nameOf(q.topic);
 
-  $app.innerHTML = `
-    <header class="bar"><button class="icon-btn" id="close" aria-label="Закрыть">✕</button></header>
-    <div class="result">
-      <div class="score">${pct}%</div>
-      <div class="verdict">${verdict}</div>
-      <p>${okCount} из ${q.results.length} верно · ${esc(q.topic.title)}</p>
-    </div>
-    ${wrong.length ? `
-      <h2 class="section">Ошибки</h2>
-      <ul class="wrong-list">
-        ${wrong.map(r => `
-          <li>
-            <div class="w-q">${esc(toRu ? r.w.en.join(' / ') : r.w.ru.join('; '))}</div>
-            <div class="w-a">${esc((toRu ? r.w.ru : r.w.en).join('; '))}</div>
-            ${r.answer ? `<div class="w-y">${esc(r.answer)}</div>` : ''}
-          </li>`).join('')}
-      </ul>
-      <button class="primary" id="redo">Повторить ошибки · ${wrong.length}</button>` : ''}
-    <button class="${wrong.length ? 'secondary' : 'primary'}" id="again">Пройти тему ещё раз</button>
-    <button class="ghost" id="home">К списку тем</button>`;
+  render(`
+    ${bar({ left: `<button class="icon-btn" id="close" aria-label="Закрыть">${ICON.close}</button>`, title: 'Результат' })}
+    <main class="page">
+      <div class="head">
+        <h1 class="title">${verdict}</h1>
+        <p class="score" style="margin-top:14px">${pct}%</p>
+        <p class="score-line">${okCount} из ${q.results.length} верно · ${esc(name)} · ${toRu ? 'EN → RU' : 'RU → EN'}</p>
+      </div>
+      <div class="grid">
+        ${wrong.length ? `
+          <section class="panel span-8">
+            <div class="panel-head"><h2>Ошибки</h2><span class="chip">${wrong.length}</span></div>
+            <div>
+              ${wrong.map(r => `
+                <div class="mistake">
+                  <div class="w-q">${esc(toRu ? r.w.en.join(' / ') : r.w.ru.join('; '))}</div>
+                  <div class="w-a">${esc((toRu ? r.w.ru : r.w.en).join('; '))}</div>
+                  ${r.answer ? `<div class="w-y">${esc(r.answer)}</div>` : ''}
+                </div>`).join('')}
+            </div>
+          </section>` : ''}
+        <section class="${wrong.length ? 'span-4' : 'span-6'}">
+          ${wrong.length ? `<button class="btn primary" id="redo">Повторить ошибки · ${wrong.length}</button>` : ''}
+          <button class="btn ${wrong.length ? '' : 'primary'}" id="again">Пройти урок ещё раз</button>
+          <button class="btn" id="home">К урокам</button>
+        </section>
+      </div>
+    </main>`);
 
   const redo = document.getElementById('redo');
   if (redo) redo.onclick = () => startQuiz(q.topic, q.dir, 0, wrong.map(r => r.w));
   document.getElementById('again').onclick = () => {
     const t = findTopic(q.topic.id);
-    if (!t || !t.words.length) return showHome();
+    if (!t || !t.words.length) return showDocument(q.topic.doc);
     startQuiz(t, q.dir, q.len, t.words);
   };
   document.getElementById('close').onclick = () => showTopic(q.topic.id);
-  document.getElementById('home').onclick = showHome;
-  window.scrollTo(0, 0);
+  document.getElementById('home').onclick = () => showDocument(q.topic.doc);
 }
 
 // ---------- запуск ----------
