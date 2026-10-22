@@ -18,6 +18,7 @@
   --muted: #5f605c;
   --accent: #1b6e66;   /* data: learned terms, progress */
   --primary: #1f201d;  /* the one filled action */
+  --primary-hover: #000000;
   --on-primary: #ffffff;
   --positive: #2e7d32;
   --negative: #b42318;
@@ -32,6 +33,15 @@
   --pad: 20px;
   --font: "Golos Text", system-ui, -apple-system, sans-serif;
   --serif: "Literata", Georgia, serif;
+  /* движение: токены taste-skill */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.76, 0, 0.24, 1);
+  --ease-exit: cubic-bezier(0.55, 0.055, 0.675, 0.19);
+  --t-press: 140ms;
+  --t-hover: 180ms;
+  --t-ui: 240ms;
+  --t-nav: 380ms;
+  --t-nav-exit: 180ms;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -47,6 +57,7 @@
     --muted: #b4b4b0;
     --accent: #5fb8ac;
     --primary: #f2f2ef;
+    --primary-hover: #ffffff;
     --on-primary: #111211;
     --positive: #6cc58f;
     --negative: #f0776a;
@@ -85,7 +96,6 @@ h1, h2, h3, p { margin: 0; }
   width: 44px; height: 44px; border: 0; border-radius: var(--radius-control); background: transparent;
   display: grid; place-items: center; color: var(--text);
 }
-.icon-btn:active { background: var(--rule); }
 .icon-btn svg { width: 20px; height: 20px; }
 
 .page { max-width: 1148px; margin: 0 auto; padding: 24px 16px calc(env(safe-area-inset-bottom) + 40px); }
@@ -140,7 +150,6 @@ h1, h2, h3, p { margin: 0; }
   width: 100%; text-align: left; padding: 14px 16px; min-height: 63px;
   background: var(--raised); border: 1px solid var(--border); border-radius: var(--radius-row);
 }
-button.row:active { border-color: var(--control); transform: scale(.99); }
 .row-title { font-size: 16px; font-weight: 600; line-height: 1.3; }
 .row-sub { font-size: 13px; color: var(--muted); }
 .row-figure { text-align: right; font-size: 15px; white-space: nowrap; }
@@ -183,14 +192,19 @@ button.row:active { border-color: var(--control); transform: scale(.99); }
 .input::placeholder { color: var(--muted); }
 .seg { display: flex; gap: 4px; padding: 4px; border-radius: var(--radius-control); background: var(--ground); border: 1px solid var(--border); }
 .seg button { flex: 1; height: 40px; border: 0; border-radius: var(--radius-control); background: transparent; font-size: 15px; color: var(--muted); }
+.seg { position: relative; }
+.seg button { position: relative; z-index: 1; }
+/* В покое тёмный фон у самой выбранной кнопки; плашка видна только пока переезжает к новой */
 .seg button.on { background: var(--primary); color: var(--on-primary); font-weight: 500; }
+.seg-pill { position: absolute; top: 4px; bottom: 4px; left: 0; border-radius: var(--radius-control); background: var(--primary); opacity: 0; }
+.seg.moving .seg-pill { opacity: 1; }
+.seg.moving button.on { background: transparent; }
 .btn {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   width: 100%; height: 52px; padding: 0 20px; border-radius: var(--radius-control);
   border: 1px solid var(--control); background: transparent; font-size: 16px; font-weight: 500;
 }
 .btn.primary { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
-.btn:active { transform: scale(.985); }
 .btn:disabled { opacity: .55; }
 .btn + .btn { margin-top: 10px; }
 .btn.small { width: auto; height: 38px; font-size: 14px; }
@@ -223,7 +237,7 @@ button.row:active { border-color: var(--control); transform: scale(.99); }
 
 /* ---------- quiz ---------- */
 .progress { height: 6px; border-radius: 99px; background: var(--cell-empty); overflow: hidden; }
-.progress > div { height: 100%; background: var(--accent); border-radius: 99px; transition: width .25s; }
+.progress > div { height: 100%; background: var(--accent); border-radius: 99px; transition: width 420ms var(--ease-out); }
 .count { text-align: right; font-size: 14px; color: var(--muted); padding-right: 10px; }
 .quiz { max-width: 720px; margin: 0 auto; }
 .q { padding: 28px 0 24px; }
@@ -271,4 +285,66 @@ button.row:active { border-color: var(--control); transform: scale(.99); }
 
 .empty { border: 1px dashed var(--control); border-radius: var(--radius-row); padding: 12px 16px; font-size: 14px; color: var(--muted); }
 
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+/* ---------- движение: отклик на нажатие ---------- */
+.btn, .row, .icon-btn, .seg button, .text-btn {
+  transition: transform var(--t-press) var(--ease-out), background-color var(--t-hover) ease,
+    border-color var(--t-hover) ease, color var(--t-hover) ease, opacity var(--t-hover) ease;
+}
+.btn:active { transform: scale(.97); }
+button.row:active { transform: scale(.985); border-color: var(--control); }
+.icon-btn:active { transform: scale(.9); background: var(--rule); }
+.seg button:active { transform: scale(.95); }
+.text-btn:active { opacity: .6; }
+.seg.ready .seg-pill { transition: transform var(--t-ui) var(--ease-out), width var(--t-ui) var(--ease-out); }
+@media (hover: hover) and (pointer: fine) {
+  .btn.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+  .btn:not(.primary):hover { border-color: var(--text); }
+  button.row:hover { border-color: var(--control); }
+  .icon-btn:hover { background: var(--rule); }
+  .seg button:not(.on):hover { color: var(--text); }
+  .text-btn:hover { text-decoration-color: currentColor; }
+}
+
+/* ---------- движение: тест ---------- */
+@keyframes fb-in { from { opacity: 0; transform: translateY(-6px); } }
+@keyframes shake { 20% { transform: translateX(-6px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+@media (prefers-reduced-motion: no-preference) {
+  .fb { animation: fb-in var(--t-ui) var(--ease-out) both; }
+  .input.shake { animation: shake 320ms var(--ease-out); }
+}
+
+/* ---------- переходы между экранами (View Transitions) ---------- */
+/* Шапка стоит на месте, меняется только её содержимое */
+.bar { view-transition-name: bar; }
+::view-transition-group(bar) { animation: none; z-index: 100; }
+::view-transition-old(bar) { display: none; }
+::view-transition-new(bar) { animation: none; }
+
+@keyframes vt-in { from { opacity: 0; transform: translateX(var(--vt-from)); } }
+@keyframes vt-out { to { opacity: 0; transform: translateX(var(--vt-to)); } }
+@keyframes vt-fade-in { from { opacity: 0; } }
+@keyframes vt-fade-out { to { opacity: 0; } }
+
+/* вглубь: новый экран приходит справа, старый уходит влево */
+html[data-nav="forward"]::view-transition-old(root) { --vt-to: -48px; animation: vt-out var(--t-nav-exit) var(--ease-exit) both; }
+html[data-nav="forward"]::view-transition-new(root) { --vt-from: 48px; animation: vt-in var(--t-nav) var(--ease-out) 90ms both; }
+/* назад: зеркально */
+html[data-nav="back"]::view-transition-old(root) { --vt-to: 48px; animation: vt-out var(--t-nav-exit) var(--ease-exit) both; }
+html[data-nav="back"]::view-transition-new(root) { --vt-from: -48px; animation: vt-in var(--t-nav) var(--ease-out) 90ms both; }
+/* следующий вопрос: короче и ближе, как перелистнуть карточку */
+html[data-nav="next"]::view-transition-old(root) { --vt-to: -28px; animation: vt-out 150ms var(--ease-exit) both; }
+html[data-nav="next"]::view-transition-new(root) { --vt-from: 28px; animation: vt-in 300ms var(--ease-out) 40ms both; }
+/* вход и выход из аккаунта */
+html[data-nav="fade"]::view-transition-old(root) { animation: vt-fade-out var(--t-nav-exit) ease both; }
+html[data-nav="fade"]::view-transition-new(root) { animation: vt-fade-in var(--t-nav) ease both; }
+
+/* Общие элементы: название урока и его полоса перетекают из строки списка в шапку экрана и обратно */
+::view-transition-group(vt-title),
+::view-transition-group(vt-strip) { animation-duration: var(--t-nav); animation-timing-function: var(--ease-out); }
+::view-transition-old(vt-title) { display: none; }
+::view-transition-new(vt-title) { animation: none; object-fit: none; object-position: left top; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+  ::view-transition-old(*), ::view-transition-new(*), ::view-transition-group(*) { animation-duration: 0s !important; animation-delay: 0s !important; }
+}

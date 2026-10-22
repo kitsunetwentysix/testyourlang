@@ -293,16 +293,75 @@ function bar({ left = '', title = '', right = '', brand = false } = {}) {
 const backBtn = (label = 'Назад') => `<button class="icon-btn" id="back" aria-label="${label}">${ICON.back}</button>`;
 
 function setupSeg(id, value, onChange) {
-  const btns = [...document.getElementById(id).children];
-  const paint = v => btns.forEach(b => { b.classList.toggle('on', b.dataset.v === v); b.setAttribute('aria-pressed', b.dataset.v === v); });
+  const seg = document.getElementById(id);
+  const btns = [...seg.querySelectorAll('button')];
+  let pill = seg.querySelector('.seg-pill');
+  if (!pill) { pill = document.createElement('span'); pill.className = 'seg-pill'; seg.prepend(pill); }
+  let current = value;
+  // Плашка выбранного варианта переезжает к нажатой кнопке
+  const place = () => {
+    const b = btns.find(x => x.dataset.v === current);
+    if (!b || !b.offsetWidth) return;
+    pill.style.width = b.offsetWidth + 'px';
+    pill.style.transform = 'translateX(' + b.offsetLeft + 'px)';
+  };
+  const paint = v => {
+    current = v;
+    btns.forEach(b => { b.classList.toggle('on', b.dataset.v === v); b.setAttribute('aria-pressed', b.dataset.v === v); });
+    place();
+  };
   paint(value);
-  btns.forEach(b => { b.onclick = () => { paint(b.dataset.v); onChange(b.dataset.v); }; });
+  requestAnimationFrame(() => { place(); seg.classList.add('ready'); });
+  if (window.ResizeObserver) new ResizeObserver(place).observe(seg);
+  let settle;
+  btns.forEach(b => {
+    b.onclick = () => {
+      if (b.dataset.v !== current && seg.classList.contains('ready') && !reduceMotion()) {
+        seg.classList.add('moving');
+        clearTimeout(settle);
+        settle = setTimeout(() => seg.classList.remove('moving'), 260);
+      }
+      paint(b.dataset.v);
+      onChange(b.dataset.v);
+    };
+  });
 }
 
 function render(html) {
   $app.innerHTML = html;
   window.scrollTo(0, 0);
 }
+
+// ---------- переходы между экранами ----------
+// forward — вглубь (документ → урок → тест), back — обратно, next — следующий вопрос, fade — вход и выход.
+// Общие элементы (название и полоса) получают одно имя на старом и новом экране и перетекают друг в друга.
+const reduceMotion = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const named = new Set();
+function nameEls(pairs = []) {
+  for (const [target, name] of pairs) {
+    const el = typeof target === 'string' ? document.querySelector(target) : target;
+    if (el) { el.style.viewTransitionName = name; named.add(el); }
+  }
+}
+function clearNames() {
+  named.forEach(el => { el.style.viewTransitionName = ''; });
+  named.clear();
+}
+function navigate(type, update, shared = {}) {
+  const run = () => { clearNames(); update(); nameEls(shared.to); };
+  // Без поддержки, при «Уменьшении движения», в фоне и до первой отрисовки — просто сменить экран
+  if (!document.startViewTransition || reduceMotion() || document.visibilityState !== 'visible' || !$app.firstElementChild) return run();
+  clearNames();
+  nameEls(shared.from);
+  document.documentElement.dataset.nav = type;
+  const vt = document.startViewTransition(run);
+  vt.ready.catch(() => {}); // браузер может отменить анимацию — экран всё равно сменится
+  vt.finished.catch(() => {}).finally(() => { delete document.documentElement.dataset.nav; clearNames(); });
+}
+// Пара «строка списка ↔ шапка экрана»: название и полоса
+const sel = (key, value) => '[data-' + key + '="' + CSS.escape(value) + '"]';
+const rowShared = s => [[s + ' .row-title', 'vt-title'], [s + ' .strip', 'vt-strip']];
+const HEAD_SHARED = [['.head h1', 'vt-title'], ['.head .strip', 'vt-strip']];
 
 // ---------- вход и регистрация ----------
 const AUTH_ERRORS = [
@@ -370,7 +429,7 @@ function showAuth(mode = 'login', message = '') {
     forgot.hidden = m !== 'login';
     say('');
   };
-  forgot.onclick = () => showReset(email.value.trim());
+  forgot.onclick = () => navigate('forward', () => showReset(email.value.trim()));
   setupSeg('mode', mode, setMode);
   setMode(mode);
   if (message) say(message, 'info');
@@ -432,7 +491,7 @@ function showReset(prefill = '') {
   const go = document.getElementById('auth-go');
   const email = document.getElementById('email');
   const say = messenger(document.getElementById('auth-msg'));
-  document.getElementById('back').onclick = () => showAuth('login');
+  document.getElementById('back').onclick = () => navigate('back', () => showAuth('login'));
 
   document.getElementById('reset-form').onsubmit = async e => {
     e.preventDefault();
@@ -509,7 +568,7 @@ async function enter(u) {
   user = u;
   render('<p class="loading">Загружаю прогресс…</p>');
   await loadProgress();
-  showHome();
+  navigate('fade', showHome);
 }
 
 async function logout() {
@@ -517,7 +576,7 @@ async function logout() {
   user = null;
   progress = emptyProgress();
   await db.auth.signOut({ scope: 'local' }).catch(() => {});
-  showAuth();
+  navigate('fade', () => showAuth());
 }
 
 // ---------- главная: документы ----------
@@ -576,7 +635,9 @@ function showHome() {
         <button class="text-btn" id="logout">Выйти</button>
       </footer>
     </main>`);
-  $app.querySelectorAll('[data-doc]').forEach(b => { b.onclick = () => showDocument(b.dataset.doc); });
+  $app.querySelectorAll('[data-doc]').forEach(b => {
+    b.onclick = () => navigate('forward', () => showDocument(b.dataset.doc), { from: rowShared(sel('doc', b.dataset.doc)), to: HEAD_SHARED });
+  });
   document.getElementById('logout').onclick = logout;
 }
 
@@ -596,6 +657,7 @@ function showDocument(id) {
       <div class="head">
         <h1 class="title">${esc(d.title)}</h1>
         <p class="subline">${esc(d.description || '')} · ${lessons(d.topics.length)} · ${terms(ds.total)}</p>
+        <div style="margin-top:18px">${docStrip(ws)}</div>
       </div>
       ${ds.bad ? `
         <section class="panel">
@@ -627,8 +689,10 @@ function showDocument(id) {
         ${legend(ds)}
       </section>
     </main>`);
-  document.getElementById('back').onclick = showHome;
-  $app.querySelectorAll('[data-topic]').forEach(b => { b.onclick = () => showTopic(b.dataset.topic); });
+  document.getElementById('back').onclick = () => navigate('back', showHome, { from: HEAD_SHARED, to: rowShared(sel('doc', d.id)) });
+  $app.querySelectorAll('[data-topic]').forEach(b => {
+    b.onclick = () => navigate('forward', () => showTopic(b.dataset.topic), { from: rowShared(sel('topic', b.dataset.topic)), to: HEAD_SHARED });
+  });
 }
 
 // ---------- урок: настройка теста и словарь ----------
@@ -692,12 +756,12 @@ function showTopic(id) {
 
   setupSeg('dir', prefs.dir, v => { prefs.dir = v; });
   setupSeg('len', String(len), v => { len = +v; prefs.len = len; });
-  document.getElementById('back').onclick = () => showDocument(t.doc);
+  document.getElementById('back').onclick = () => navigate('back', () => showDocument(t.doc), { from: HEAD_SHARED, to: rowShared(sel('topic', t.id)) });
   const more = document.getElementById('more');
   if (more) more.onclick = () => { document.getElementById('glossary').innerHTML = t.words.map(glossRow).join(''); more.remove(); };
   document.getElementById('start').onclick = () => {
     save();
-    startQuiz(t, prefs.dir, len, t.words);
+    navigate('forward', () => startQuiz(t, prefs.dir, len, t.words));
   };
 }
 
@@ -735,7 +799,7 @@ function renderQuestion() {
   $app.innerHTML = `
     <header class="bar">
       <div><button class="icon-btn" id="quit" aria-label="Выйти из теста">${ICON.close}</button></div>
-      <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${q.items.length}" aria-valuenow="${q.i}"><div style="width:${(q.i / q.items.length) * 100}%"></div></div>
+      <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${q.items.length}" aria-valuenow="${q.i}"><div id="progress-fill" style="width:${(Math.max(q.i - 1, 0) / q.items.length) * 100}%"></div></div>
       <div class="count">${q.i + 1}/${q.items.length}</div>
     </header>
     <main class="page">
@@ -761,6 +825,8 @@ function renderQuestion() {
   const skip = document.getElementById('skip');
   const fb = document.getElementById('fb');
   const word = document.getElementById('word');
+  const fill = document.getElementById('progress-fill');
+  requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = (q.i / q.items.length) * 100 + '%'; }));
   fitWord(word);
   if (document.fonts) document.fonts.ready.then(() => { if (word.isConnected) fitWord(word); });
 
@@ -791,6 +857,7 @@ function renderQuestion() {
     q.results.push({ w, ok: r.ok, answer: value.trim() });
     record(w, r.ok);
     showFeedback(r, value.trim());
+    if (!r.ok && value.trim()) { input.classList.remove('shake'); void input.offsetWidth; input.classList.add('shake'); }
     // Ответ принят: поле только для чтения и клавиатура прячется, дальше — кнопкой
     input.readOnly = true;
     input.placeholder = '';
@@ -810,7 +877,7 @@ function renderQuestion() {
   skip.onclick = () => submit('');
   document.getElementById('quit').onclick = () => {
     if (q.i > 0 && !confirm('Прервать тест? Результат теста не сохранится.')) return;
-    showTopic(q.topic.id);
+    navigate('back', () => showTopic(q.topic.id));
   };
   input.focus();
 }
@@ -818,8 +885,8 @@ function renderQuestion() {
 function next() {
   quiz.i++;
   quiz.checked = false;
-  if (quiz.i >= quiz.items.length) showResult();
-  else renderQuestion();
+  if (quiz.i >= quiz.items.length) navigate('forward', showResult);
+  else navigate('next', renderQuestion);
 }
 
 function showResult() {
@@ -868,14 +935,14 @@ function showResult() {
     </main>`);
 
   const redo = document.getElementById('redo');
-  if (redo) redo.onclick = () => startQuiz(q.topic, q.dir, 0, wrong.map(r => r.w));
+  if (redo) redo.onclick = () => navigate('forward', () => startQuiz(q.topic, q.dir, 0, wrong.map(r => r.w)));
   document.getElementById('again').onclick = () => {
     const t = findTopic(q.topic.id);
-    if (!t || !t.words.length) return showDocument(q.topic.doc);
-    startQuiz(t, q.dir, q.len, t.words);
+    if (!t || !t.words.length) return navigate('back', () => showDocument(q.topic.doc));
+    navigate('forward', () => startQuiz(t, q.dir, q.len, t.words));
   };
-  document.getElementById('close').onclick = () => showTopic(q.topic.id);
-  document.getElementById('home').onclick = () => showDocument(q.topic.doc);
+  document.getElementById('close').onclick = () => navigate('back', () => showTopic(q.topic.id));
+  document.getElementById('home').onclick = () => navigate('back', () => showDocument(q.topic.doc), { to: rowShared(sel('topic', q.topic.id)) });
 }
 
 // ---------- запуск ----------
