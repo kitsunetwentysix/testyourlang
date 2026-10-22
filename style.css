@@ -255,6 +255,8 @@ h1, h2, h3, p { margin: 0; }
 .fb.warn { background: var(--pill-warning-bg); color: var(--pill-warning-ink); }
 .fb.bad { background: var(--pill-negative-bg); color: var(--pill-negative-ink); }
 .fb .right { color: var(--text); font: 500 18px/1.35 var(--serif); margin-top: 4px; }
+/* буквы с опечаткой: подчёркнуты, как в Duolingo */
+.fb mark { background: none; color: inherit; font-weight: 700; text-decoration: underline; text-decoration-color: var(--pill-positive-ink); text-decoration-thickness: 2px; text-underline-offset: 3px; }
 .fb .text-btn { color: inherit; padding-bottom: 0; text-decoration-color: currentColor; font-size: 14px; }
 #answer.locked { color: var(--muted); }
 #form .btn { margin-top: 12px; }

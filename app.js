@@ -72,13 +72,66 @@ function check(input, answers, lang) {
   const own = answers.flatMap(a => variants(a, lang));
   if (own.includes(x)) return { ok: true, typo: false };
   if (KNOWN[lang].has(x)) return { ok: false }; // это другой термин из словаря: consignee вместо consignor
-  let typo = false;
-  for (const y of own) {
-    if (core(x, lang) === core(y, lang)) continue;
-    const tolerance = y.length <= 4 ? 0 : y.length <= 8 ? 1 : y.length <= 20 ? 2 : 3;
-    if (lev(x, y) <= tolerance) typo = true;
+  // Как в Duolingo: опечатка засчитывается как верный ответ, но показываем, где она.
+  // Запоминаем ближайший вариант ответа — по нему подсветим ошибочные буквы.
+  let best = null;
+  for (const a of answers) {
+    const plain = a.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+    for (const [y, shown] of [[norm(plain, lang), plain], [norm(a, lang), a]]) {
+      if (core(x, lang) === core(y, lang)) continue;
+      const tolerance = y.length <= 4 ? 0 : y.length <= 8 ? 1 : y.length <= 20 ? 2 : 3;
+      const d = lev(x, y);
+      if (d <= tolerance && (!best || d < best.d)) best = { d, shown };
+    }
   }
-  return { ok: typo, typo };
+  return best ? { ok: true, typo: true, shown: best.shown } : { ok: false };
+}
+
+// Правильное написание, где <mark> отмечает буквы, в которых ошибся пользователь
+function typoMarkup(shown, input, lang) {
+  const low = s => s.toLowerCase().replace(/ё/g, 'е').replace(/[’‘`´]/g, "'");
+  let start = 0; // «to», «the» перед английским словом можно не писать — их не подсвечиваем
+  const lead = lang === 'en' && /^(to|the|a|an) /i.exec(shown);
+  if (lead && !low(input).startsWith(lead[1].toLowerCase() + ' ')) start = lead[0].length;
+  const src = shown.slice(start);
+  // Сравниваем только буквы и цифры: пробелы, скобки и дефисы не считаются ошибкой
+  const lowSrc = low(src);
+  const pos = [];
+  for (let k = 0; k < lowSrc.length; k++) if (/[a-zа-я0-9]/.test(lowSrc[k])) pos.push(k);
+  const a = pos.map(k => lowSrc[k]).join('');
+  const b = low(input).replace(/[^a-zа-я0-9]/g, '');
+  const n = a.length, m = b.length;
+  const dp = Array.from({ length: n + 1 }, (_, i) => Array.from({ length: m + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)));
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+  }
+  const bad = new Array(n).fill(false);
+  let i = n, j = m;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && dp[i][j] === dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)) {
+      if (a[i - 1] !== b[j - 1]) bad[i - 1] = true; // не та буква
+      i--; j--;
+    } else if (i > 0 && dp[i][j] === dp[i - 1][j] + 1) {
+      bad[i - 1] = true; // пропущенная буква
+      i--;
+    } else {
+      // лишняя буква: отмечаем такую же букву рядом (удвоение), иначе соседнюю слева
+      if (n) bad[i < n && a[i] === b[j - 1] ? i : i > 0 ? i - 1 : 0] = true;
+      j--;
+    }
+  }
+  const marked = new Array(src.length).fill(false);
+  bad.forEach((v, k) => { if (v) marked[pos[k]] = true; });
+  let html = esc(shown.slice(0, start));
+  for (let k = 0; k < src.length;) {
+    let e = k;
+    while (e < src.length && marked[e] === marked[k]) e++;
+    html += marked[k] ? `<mark>${esc(src.slice(k, e))}</mark>` : esc(src.slice(k, e));
+    k = e;
+  }
+  return html;
 }
 
 // ---------- данные: документы → темы (уроки) → термины ----------
@@ -831,7 +884,7 @@ function renderQuestion() {
     if (r.ok && !r.typo) {
       fb.innerHTML = `<div class="fb ok"><b class="head">Верно</b>${shown.length > 1 || /\(/.test(shown[0]) ? right : ''}</div>`;
     } else if (r.ok) {
-      fb.innerHTML = `<div class="fb warn"><b class="head">Засчитано, но с опечаткой</b>${right}</div>`;
+      fb.innerHTML = `<div class="fb ok"><b class="head">Верно, но есть опечатка</b><div class="right">${typoMarkup(r.shown, value, lang)}</div></div>`;
     } else {
       fb.innerHTML = `<div class="fb bad"><b class="head">${value ? 'Неверно' : 'Правильный ответ'}</b>${right}
         ${value ? '<button type="button" class="text-btn" id="override">Мой ответ тоже верный, засчитать</button>' : ''}</div>`;
