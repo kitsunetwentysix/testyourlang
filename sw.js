@@ -1,5 +1,5 @@
 // Сначала сеть (чтобы новые темы появлялись сразу), без интернета — из кэша
-const CACHE = 'legal-vocab-v4';
+const CACHE = 'legal-vocab-v5';
 const FILES = [
   './', 'index.html', 'style.css', 'app.js', 'topics.js', 'config.js', 'vendor/supabase.js', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png',
   'vendor/fonts/golos-cyrillic.woff2', 'vendor/fonts/golos-latin.woff2', 'vendor/fonts/literata-cyrillic.woff2', 'vendor/fonts/literata-latin.woff2',
