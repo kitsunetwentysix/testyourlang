@@ -879,11 +879,9 @@ function showProfile() {
         <div class="tile"><span class="tile-label">Ответов</span><span class="tile-value">${s.answers}</span><span class="tile-note">за всё время</span></div>
         <div class="tile"><span class="tile-label">Точность</span><span class="tile-value${accuracy == null ? ' dash' : ''}">${accuracy == null ? '—' : accuracy + '%'}</span><span class="tile-note">${accuracy == null ? 'ещё не было ответов' : 'верных ответов'}</span></div>
       </section>
-      <section class="panel">
-        <div class="rows">
-          <button class="row link" id="terms"><div class="row-title">Условия использования</div><span class="row-chev">${ICON.chevron}</span></button>
-          <a class="row link" href="mailto:${CONTACT}"><div><div class="row-title">Написать нам</div><div class="row-sub">${CONTACT}</div></div><span class="row-chev">${ICON.chevron}</span></a>
-        </div>
+      <section class="panel list-panel">
+        <button class="list-row" id="terms"><span>Условия использования</span><span class="row-chev">${ICON.chevron}</span></button>
+        <a class="list-row" href="mailto:${CONTACT}"><span>Написать нам<small>${CONTACT}</small></span><span class="row-chev">${ICON.chevron}</span></a>
       </section>
       <button class="btn logout" id="logout">Выйти</button>
     </main>`, { tab: 'profile', root: true });

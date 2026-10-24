@@ -23,6 +23,8 @@
   --positive: #2e7d32;
   --negative: #b42318;
   --cell-empty: #dcddd8;
+  --active: #e3e4df;        /* выбранная вкладка: нейтральная плашка на тоне шапки */
+  --accent-soft: #dcecea;   /* бледный тон акцента: аватар */
   --pill-positive-bg: #dcfae5; --pill-positive-ink: #04250e;
   --pill-negative-bg: #fdecea; --pill-negative-ink: #7a1d14;
   --pill-warning-bg: #fffbeb; --pill-warning-ink: #92400e;
@@ -63,6 +65,8 @@
     --positive: #6cc58f;
     --negative: #f0776a;
     --cell-empty: #3a3b39;
+    --active: #2a2b29;
+    --accent-soft: #1d3331;
     --pill-positive-bg: #172a1d; --pill-positive-ink: #8fd8a9;
     --pill-negative-bg: #2c1a18; --pill-negative-ink: #f3a197;
     --pill-warning-bg: #2b2210; --pill-warning-ink: #e9c46a;
@@ -120,7 +124,7 @@ h1, h2, h3, p { margin: 0; }
 .subline b { color: var(--text); font-weight: 500; }
 .head { margin-bottom: 28px; }
 @media (min-width: 900px) {
-  .greeting { font-size: 48px; }
+  .greeting { font-size: 32px; } /* экран приложения, не лендинг: заголовок 18–32px */
   .head { margin-bottom: 48px; }
 }
 
@@ -293,13 +297,32 @@ h1, h2, h3, p { margin: 0; }
   flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
   padding: 0; border: 0; background: none; color: var(--muted); font-size: 11px; font-weight: 500;
 }
-.tab-icon { display: grid; place-items: center; height: 30px; transition: transform var(--t-press) var(--ease-out); }
-.tab-icon svg { width: 24px; height: 24px; }
+/* Все три вкладки равны: заливка — только у выбранной, нейтральной серой плашкой под иконкой.
+   Чёрная таблетка «+» была самым громким пятном на каждом экране и спорила с главной кнопкой экрана. */
+.tab-icon {
+  display: grid; place-items: center; width: 56px; height: 30px; border-radius: var(--radius-control);
+  transition: transform var(--t-press) var(--ease-out), background-color var(--t-hover) ease;
+}
+.tab-icon svg { width: 22px; height: 22px; }
 .tab.on { color: var(--text); }
-.tab-add .tab-icon { width: 48px; border-radius: var(--radius-control); background: var(--primary); color: var(--on-primary); }
-.tab-add .tab-icon svg { width: 20px; height: 20px; }
-.tab:active .tab-icon { transform: scale(.9); }
+.tab.on .tab-icon { background: var(--active); }
+.tab:active .tab-icon { transform: scale(.92); }
 .with-tabs .page { padding-bottom: calc(env(safe-area-inset-bottom) + 104px); }
+@media (hover: hover) and (pointer: fine) { .tab:not(.on):hover { color: var(--text); } }
+/* На компьютере вкладки уходят в правый край верхней шапки: внизу им не место, а шапка была пустой */
+@media (min-width: 900px) {
+  .tabbar {
+    top: 0; bottom: auto; left: auto; right: max(6px, calc((100% - 1100px) / 2 + 12px));
+    height: calc(48px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 0 0; gap: 4px; align-items: center;
+    background: none; border: 0;
+  }
+  .tab { flex: none; flex-direction: row; gap: 8px; height: 36px; padding: 0 14px 0 8px; border-radius: var(--radius-control); font-size: 14px; }
+  .tab-icon { width: auto; height: auto; background: none !important; }
+  .tab-icon svg { width: 18px; height: 18px; }
+  .tab.on { background: var(--active); }
+  .with-tabs .page { padding-bottom: 64px; }
+  .toast { bottom: 32px; }
+}
 
 /* ---------- главная: материалы и «Пройденное» ---------- */
 .doc { position: relative; }
@@ -357,9 +380,18 @@ h1, h2, h3, p { margin: 0; }
 .profile-head .subline { margin-top: 4px; }
 .avatar {
   flex: none; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--accent); color: var(--ground); font: 600 22px/1 var(--serif);
+  background: var(--accent-soft); color: var(--accent); font: 600 22px/1 var(--serif);
 }
-a.row { color: inherit; text-decoration: none; }
+/* Ссылки профиля — один список с линиями, а не карточки в подносе */
+.list-panel { padding-top: 4px; padding-bottom: 4px; }
+.list-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 56px;
+  padding: 10px 0; border: 0; border-top: 1px solid var(--border); background: none;
+  color: inherit; text-align: left; text-decoration: none; font-size: 16px; font-weight: 500;
+}
+.list-row:first-child { border-top: 0; }
+.list-row small { display: block; font-size: 13px; font-weight: 400; color: var(--muted); }
+.list-row:active { opacity: .6; }
 .row-chev { color: var(--muted); }
 .row-chev svg { display: block; width: 18px; height: 18px; }
 .logout { margin-top: var(--gap); }
