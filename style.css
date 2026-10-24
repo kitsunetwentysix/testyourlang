@@ -306,6 +306,9 @@ button.row:active { transform: scale(.985); border-color: var(--control); }
 .seg button:active { transform: scale(.95); }
 .text-btn:active { opacity: .6; }
 .seg.ready .seg-pill { transition: transform var(--t-ui) var(--ease-out), width var(--t-ui) var(--ease-out); }
+/* Фон выбранной кнопки и плашка сменяют друг друга в один кадр: если фон будет плавно гаснуть
+   и проявляться, в начале и в конце переезда плашка «моргает» */
+.seg button { transition: transform var(--t-press) var(--ease-out), color var(--t-ui) var(--ease-out); }
 @media (hover: hover) and (pointer: fine) {
   .btn.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
   .btn:not(.primary):hover { border-color: var(--text); }
@@ -331,11 +334,13 @@ button.row:active { transform: scale(.985); border-color: var(--control); }
 ::view-transition-new(bar) { animation: none; }
 
 /* Пуш как в iOS: экраны непрозрачные и не полупрозрачничают друг сквозь друга.
-   Новый экран целиком наезжает поверх старого, старый немного уходит в сторону и притемняется. */
-@keyframes vt-push-in { from { transform: translateX(var(--vt-from)); } }
-@keyframes vt-push-under { to { transform: translateX(var(--vt-to)); filter: brightness(.9); } }
+   Новый экран целиком наезжает поверх старого, старый немного уходит в сторону.
+   Анимируется только transform: притемнение через filter на весь экран дорогое,
+   и на iPhone переход шёл рывками. */
+@keyframes vt-push-in { from { transform: translateX(100%); } }
+@keyframes vt-push-under { to { transform: translateX(-28%); } }
 @keyframes vt-pop-out { to { transform: translateX(100%); } }
-@keyframes vt-pop-under { from { transform: translateX(-28%); filter: brightness(.9); } }
+@keyframes vt-pop-under { from { transform: translateX(-28%); } }
 @keyframes vt-fade-in { from { opacity: 0; } }
 @keyframes vt-fade-out { to { opacity: 0; } }
 
@@ -345,14 +350,14 @@ html[data-nav]::view-transition-new(root) { mix-blend-mode: normal; animation-du
 html[data-nav]::view-transition-new(root) { background: var(--ground); }
 
 /* вглубь: новый сверху, приезжает справа; старый уезжает на четверть влево */
-html[data-nav="forward"]::view-transition-new(root) { --vt-from: 100%; animation-name: vt-push-in; }
-html[data-nav="forward"]::view-transition-old(root) { --vt-to: -28%; animation-name: vt-push-under; }
+html[data-nav="forward"]::view-transition-new(root) { animation-name: vt-push-in; }
+html[data-nav="forward"]::view-transition-old(root) { animation-name: vt-push-under; }
 /* назад: текущий экран сверху и уезжает вправо, открывая предыдущий */
 html[data-nav="back"]::view-transition-old(root) { z-index: 1; animation-name: vt-pop-out; }
 html[data-nav="back"]::view-transition-new(root) { animation-name: vt-pop-under; }
 /* следующий вопрос: тот же пуш, но короче */
-html[data-nav="next"]::view-transition-new(root) { --vt-from: 100%; animation-name: vt-push-in; animation-duration: var(--t-next); }
-html[data-nav="next"]::view-transition-old(root) { --vt-to: -28%; animation-name: vt-push-under; animation-duration: var(--t-next); }
+html[data-nav="next"]::view-transition-new(root) { animation-name: vt-push-in; animation-duration: var(--t-next); }
+html[data-nav="next"]::view-transition-old(root) { animation-name: vt-push-under; animation-duration: var(--t-next); }
 /* вход и выход из аккаунта: обычное растворение одной длины */
 html[data-nav="fade"]::view-transition-old(root) { animation: vt-fade-out var(--t-ui) ease both; }
 html[data-nav="fade"]::view-transition-new(root) { animation: vt-fade-in var(--t-ui) ease both; }
