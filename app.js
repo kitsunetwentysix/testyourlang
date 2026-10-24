@@ -135,15 +135,9 @@ function typoMarkup(shown, input, lang) {
 }
 
 // ---------- данные: документы → темы (уроки) → термины ----------
-const DOCUMENTS = (window.DOCUMENTS || []).map(d => ({
-  ...d,
-  topics: d.topics.map(t => ({
-    ...t,
-    doc: d.id,
-    words: t.words.map(w => ({ en: list(w.en), ru: list(w.ru), note: w.note || '', topic: t.id })),
-  })),
-}));
-const TOPICS = DOCUMENTS.flatMap(d => d.topics);
+// Общие документы — из topics.js, личные — из базы после входа (setDocuments).
+let DOCUMENTS = [];
+let TOPICS = [];
 const docWords = d => d.topics.flatMap(t => t.words);
 const wordKey = w => w.topic + '|' + w.en[0];
 
@@ -154,24 +148,33 @@ const originalOf = t => (t.description || '').split(' · ')[0];
 
 // Все ответы словаря — чтобы не засчитывать соседний термин как опечатку
 const KNOWN = { en: new Set(), ru: new Set() };
-for (const t of TOPICS) {
-  for (const w of t.words) {
-    w.en.forEach(a => variants(a, 'en').forEach(v => KNOWN.en.add(v)));
-    w.ru.forEach(a => variants(a, 'ru').forEach(v => KNOWN.ru.add(v)));
-  }
-}
-
 // RU→EN: если у двух терминов темы один и тот же перевод, подходит любой из них
 const enByRu = new Map();
-for (const t of TOPICS) {
-  for (const w of t.words) {
-    for (const r of w.ru) {
-      const k = t.id + '|' + norm(r.replace(/\([^)]*\)/g, ' '), 'ru');
-      if (!enByRu.has(k)) enByRu.set(k, new Set());
-      w.en.forEach(e => enByRu.get(k).add(e));
+
+function setDocuments(own = []) {
+  DOCUMENTS = [...(window.DOCUMENTS || []), ...own].map(d => ({
+    ...d,
+    topics: d.topics.map(t => ({
+      ...t,
+      doc: d.id,
+      words: t.words.map(w => ({ en: list(w.en), ru: list(w.ru), note: w.note || '', topic: t.id })),
+    })),
+  }));
+  TOPICS = DOCUMENTS.flatMap(d => d.topics);
+  KNOWN.en.clear(); KNOWN.ru.clear(); enByRu.clear();
+  for (const t of TOPICS) {
+    for (const w of t.words) {
+      w.en.forEach(a => variants(a, 'en').forEach(v => KNOWN.en.add(v)));
+      w.ru.forEach(a => variants(a, 'ru').forEach(v => KNOWN.ru.add(v)));
+      for (const r of w.ru) {
+        const k = t.id + '|' + norm(r.replace(/\([^)]*\)/g, ' '), 'ru');
+        if (!enByRu.has(k)) enByRu.set(k, new Set());
+        w.en.forEach(e => enByRu.get(k).add(e));
+      }
     }
   }
 }
+setDocuments();
 function answersFor(w, dir) {
   if (dir === 'en-ru') return w.ru;
   const all = new Set(w.en);
@@ -262,6 +265,23 @@ async function loadProgress() {
   const unsynced = src && src !== remote;
   saveLocal(unsynced);
   if (unsynced && reached) pushProgress();
+}
+
+// Личные документы и открытые по ссылке темы; копия на телефоне — чтобы тесты работали без сети
+const docsKey = () => 'lv.docs.' + user.id;
+async function loadDocuments() {
+  let own = null;
+  try {
+    const { data, error } = await db.from('documents')
+      .select('id, title, description, created_at, topics(id, title, description, position, words)')
+      .order('created_at')
+      .order('position', { referencedTable: 'topics' });
+    if (!error) {
+      own = data.filter(d => d.topics.length).map(d => ({ ...d, added: d.created_at.slice(0, 10) }));
+      ls.set(docsKey(), JSON.stringify(own));
+    }
+  } catch (e) { /* нет сети */ }
+  setDocuments(own || ls.json(docsKey()) || []);
 }
 
 function logAttempt(topicId, dir, total, correct) {
@@ -439,13 +459,12 @@ const emailField = (value = '') => `
 
 function showAuth(mode = 'login', message = '') {
   user = null;
-  const total = TOPICS.reduce((n, t) => n + t.words.length, 0);
   render(`
     <main class="page">
       <div class="auth">
         <div class="mark" aria-hidden="true">§</div>
         <h1 class="greeting">Legal English</h1>
-        <p class="subline">Тесты по юридическому английскому: ${terms(total)} с переводом в обе стороны.</p>
+        <p class="subline">Тесты по юридической лексике английского с переводом в обе стороны.</p>
         <div class="seg" id="mode">
           <button type="button" data-v="login">Вход</button>
           <button type="button" data-v="signup">Регистрация</button>
@@ -645,8 +664,8 @@ function showNewPassword() {
 async function enter(u) {
   if (user?.id === u.id) return;
   user = u;
-  render('<p class="loading">Загружаю прогресс…</p>');
-  await loadProgress();
+  render('<p class="loading">Загружаю документы и прогресс…</p>');
+  await Promise.all([loadProgress(), loadDocuments()]);
   navigate('fade', showHome);
 }
 
@@ -654,6 +673,7 @@ async function logout() {
   if (saveTimer || ls.json(cacheKey())?.dirty) await pushProgress();
   user = null;
   progress = emptyProgress();
+  setDocuments();
   await db.auth.signOut({ scope: 'local' }).catch(() => {});
   navigate('fade', () => showAuth());
 }
@@ -671,7 +691,9 @@ function showHome() {
   quiz = null;
   const all = DOCUMENTS.flatMap(docWords);
   const s = summary(all);
-  const fact = s.bad
+  const fact = !DOCUMENTS.length
+    ? 'Документов пока нет. Когда тебе откроют документ, он появится здесь.'
+    : s.bad
     ? `<b>${terms(s.bad)}</b> ${plural(s.bad, 'ждёт', 'ждут', 'ждут')} повторения. Они собраны в «Работе над ошибками» внутри документа.`
     : s.ok
       ? `Выучено <b>${s.ok} из ${terms(s.total)}</b>. Ошибок к повторению нет.`
@@ -1045,7 +1067,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   db.auth.onAuthStateChange((event, session) => {
     if (event === 'PASSWORD_RECOVERY') { if (!recovering) showNewPassword(); return; }
     if (recovering) return;
-    if (event === 'SIGNED_OUT' && user) { progress = emptyProgress(); showAuth('login', 'Сессия закончилась, войди ещё раз.'); }
+    if (event === 'SIGNED_OUT' && user) { progress = emptyProgress(); setDocuments(); showAuth('login', 'Сессия закончилась, войди ещё раз.'); }
     else if (event === 'SIGNED_IN' && session && !user) enter(session.user);
   });
 })();
