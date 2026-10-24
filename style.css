@@ -286,6 +286,13 @@ h1, h2, h3, p { margin: 0; }
 .account { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 32px; font-size: 14px; color: var(--muted); }
 .account span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.legal { margin-top: 12px; text-align: center; font-size: 13px; color: var(--muted); }
+.legal .text-btn { font-size: 13px; color: var(--muted); }
+.terms { max-width: 60ch; margin: 0 auto; }
+.terms h2 { margin-top: 28px; font-size: 16px; font-weight: 600; }
+.terms p:not(.subline) { margin-top: 8px; font-size: 15px; line-height: 1.55; }
+.terms a { color: var(--accent); text-underline-offset: 3px; overflow-wrap: anywhere; }
+
 .empty { border: 1px dashed var(--control); border-radius: var(--radius-row); padding: 12px 16px; font-size: 14px; color: var(--muted); }
 
 /* ---------- движение: отклик на нажатие ---------- */

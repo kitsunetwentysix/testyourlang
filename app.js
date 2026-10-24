@@ -445,7 +445,7 @@ function showAuth(mode = 'login', message = '') {
       <div class="auth">
         <div class="mark" aria-hidden="true">§</div>
         <h1 class="greeting">Legal English</h1>
-        <p class="subline">Тесты по юридическому английскому по твоему учебнику: ${terms(total)} с переводом в обе стороны.</p>
+        <p class="subline">Тесты по юридическому английскому: ${terms(total)} с переводом в обе стороны.</p>
         <div class="seg" id="mode">
           <button type="button" data-v="login">Вход</button>
           <button type="button" data-v="signup">Регистрация</button>
@@ -461,6 +461,7 @@ function showAuth(mode = 'login', message = '') {
           <button class="btn primary" id="auth-go"></button>
         </form>
         <p class="center"><button type="button" class="text-btn" id="forgot">Забыли пароль?</button></p>
+        <p class="legal"><span id="terms-lead">Создавая аккаунт, ты принимаешь </span><button type="button" class="text-btn" id="terms">условия использования</button></p>
       </div>
     </main>`);
 
@@ -468,6 +469,7 @@ function showAuth(mode = 'login', message = '') {
   const email = document.getElementById('email');
   const password = document.getElementById('password');
   const forgot = document.getElementById('forgot');
+  const termsBtn = document.getElementById('terms');
   const say = messenger(document.getElementById('auth-msg'));
 
   const setMode = m => {
@@ -476,9 +478,12 @@ function showAuth(mode = 'login', message = '') {
     password.autocomplete = m === 'login' ? 'current-password' : 'new-password';
     password.placeholder = m === 'login' ? '' : 'Минимум 6 символов';
     forgot.hidden = m !== 'login';
+    document.getElementById('terms-lead').hidden = m === 'login';
+    termsBtn.textContent = m === 'login' ? 'Условия использования' : 'условия использования';
     say('');
   };
   forgot.onclick = () => navigate('forward', () => showReset(email.value.trim()));
+  termsBtn.onclick = () => navigate('forward', () => showTerms(() => showAuth(mode)));
   setupSeg('mode', mode, setMode);
   setMode(mode);
   if (message) say(message, 'info');
@@ -560,6 +565,31 @@ function showReset(prefill = '') {
       go.disabled = false;
     }
   };
+}
+
+// Условия использования — открываются со входа и с главной, back возвращает туда, откуда пришли
+const CONTACT = 'nonkaprojects@gmail.com';
+function showTerms(back) {
+  const mail = `<a href="mailto:${CONTACT}">${CONTACT}</a>`;
+  render(`
+    ${bar({ left: backBtn(), title: 'Условия' })}
+    <main class="page">
+      <article class="terms">
+        <h1 class="title">Условия использования</h1>
+        <p class="subline">Редакция от 24.10.2026</p>
+        <h2>Что это</h2>
+        <p>Приложение для изучения юридической лексики английского языка. Оно бесплатное и работает «как есть»: может меняться или перестать работать.</p>
+        <h2>Аккаунт</h2>
+        <p>Вход по почте и паролю. Не передавай пароль другим. Один аккаунт — для одного человека.</p>
+        <h2>Какие данные мы храним</h2>
+        <p>Почту, прогресс и результаты тестов. Они нужны только для работы приложения. Данные хранятся в сервисе Supabase, другим лицам мы их не передаём. Чтобы удалить аккаунт и все данные, напиши на ${mail}.</p>
+        <h2>Учебные материалы</h2>
+        <p>Наборы терминов — это пары «термин — перевод» для личной учёбы. Если ты считаешь, что какой-то материал нарушает твои права, напиши на ${mail}, и мы его уберём.</p>
+        <h2>Связь</h2>
+        <p>Вопросы, предложения и жалобы — на ${mail}.</p>
+      </article>
+    </main>`);
+  document.getElementById('back').onclick = () => navigate('back', back);
 }
 
 // Открыта ссылка из письма: сессия восстановления уже есть, осталось задать пароль
@@ -683,11 +713,13 @@ function showHome() {
         <span>${esc(user.email || '')}</span>
         <button class="text-btn" id="logout">Выйти</button>
       </footer>
+      <p class="legal"><button class="text-btn" id="terms">Условия использования</button></p>
     </main>`);
   $app.querySelectorAll('[data-doc]').forEach(b => {
     b.onclick = () => navigate('forward', () => showDocument(b.dataset.doc));
   });
   document.getElementById('logout').onclick = logout;
+  document.getElementById('terms').onclick = () => navigate('forward', () => showTerms(showHome));
 }
 
 // ---------- документ: его уроки ----------
