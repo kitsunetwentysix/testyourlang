@@ -12,6 +12,7 @@ function plural(n, one, few, many) {
 }
 const terms = n => n + ' ' + plural(n, 'термин', 'термина', 'терминов');
 const lessons = n => n + ' ' + plural(n, 'урок', 'урока', 'уроков');
+const materials = n => n + ' ' + plural(n, 'материал', 'материала', 'материалов');
 
 function shuffle(a) {
   for (let i = a.length - 1; i > 0; i--) {
@@ -31,6 +32,12 @@ const ls = {
 const ICON = {
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>',
+  home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+  user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>',
+  upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>',
 };
 
 // ---------- проверка ответа ----------
@@ -356,6 +363,15 @@ function findTopic(id) {
   return TOPICS.find(t => t.id === id);
 }
 
+// Пройденные материалы убраны с главной в «Пройденное»; список хранится в настройках вместе с прогрессом
+const doneIds = () => new Set(progress.prefs.done || []);
+function setDone(id, on) {
+  const done = doneIds();
+  if (on) done.add(id); else done.delete(id);
+  progress.prefs.done = [...done];
+  save();
+}
+
 // ---------- оболочка ----------
 function bar({ left = '', title = '', right = '', brand = false } = {}) {
   if (brand) {
@@ -400,13 +416,59 @@ function setupSeg(id, value, onChange) {
   });
 }
 
-function render(html) {
-  $app.innerHTML = html;
-  window.scrollTo(0, 0);
+// tab — какая вкладка нижнего меню подсвечена (без него меню нет), root — главный экран этой вкладки,
+// inPlace — перерисовка того же экрана: не прыгать наверх и не убирать подсказку внизу
+function render(html, { tab = null, root = false, inPlace = false } = {}) {
+  $app.innerHTML = html + (tab ? tabbar(tab) : '');
+  $app.classList.toggle('with-tabs', !!tab);
+  if (tab) wireTabs(tab, root);
+  if (!inPlace) { window.scrollTo(0, 0); hideToast(); }
+}
+
+// ---------- нижнее меню ----------
+const TABS = [
+  { id: 'home', label: 'Главная', icon: ICON.home, open: () => showHome() },
+  { id: 'add', label: 'Добавить', icon: ICON.plus, open: () => showAdd() },
+  { id: 'profile', label: 'Профиль', icon: ICON.user, open: () => showProfile() },
+];
+const tabbar = active => `
+  <nav class="tabbar" aria-label="Разделы">${TABS.map(t => `
+    <button class="tab tab-${t.id}${t.id === active ? ' on' : ''}" data-tab="${t.id}"${t.id === active ? ' aria-current="page"' : ''}>
+      <span class="tab-icon">${t.icon}</span><span class="tab-label">${t.label}</span>
+    </button>`).join('')}
+  </nav>`;
+function wireTabs(active, root) {
+  $app.querySelectorAll('[data-tab]').forEach(b => {
+    const t = TABS.find(x => x.id === b.dataset.tab);
+    b.onclick = () => {
+      if (t.id !== active) return navigate('tab', t.open);
+      // Своя вкладка: на её главном экране — наверх, глубже — обратно к нему
+      if (root) window.scrollTo({ top: 0, behavior: reduceMotion() ? 'auto' : 'smooth' });
+      else navigate('back', t.open);
+    };
+  });
+}
+
+// Подсказка внизу экрана с действием («Вернуть»), сама прячется через 4 секунды
+let toastTimer = null;
+function hideToast() {
+  clearTimeout(toastTimer);
+  document.querySelector('.toast')?.remove();
+}
+function toast(text, action, onAction) {
+  hideToast();
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.setAttribute('role', 'status');
+  el.innerHTML = `<span>${esc(text)}</span><button type="button" class="toast-btn">${esc(action)}</button>`;
+  el.querySelector('button').onclick = () => { hideToast(); onAction(); };
+  document.body.append(el);
+  toastTimer = setTimeout(hideToast, 4000);
 }
 
 // ---------- переходы между экранами ----------
-// forward — вглубь (документ → урок → тест), back — обратно, next — следующий вопрос, fade — вход и выход.
+// forward — вглубь (документ → урок → тест), back — обратно, next — следующий вопрос, fade — вход и выход,
+// tab — смена вкладки нижнего меню, reorder — материал переезжает между «Материалами» и «Пройденным».
 // shared.from / shared.to — элементы, которые должны перетечь между экранами (сейчас не используется: при пуше экран едет целиком).
 const reduceMotion = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const named = new Set();
@@ -586,9 +648,9 @@ function showReset(prefill = '') {
   };
 }
 
-// Условия использования — открываются со входа и с главной, back возвращает туда, откуда пришли
+// Условия использования — открываются со входа, из профиля и со вкладки «Добавить»; back возвращает туда, откуда пришли
 const CONTACT = 'nonkaprojects@gmail.com';
-function showTerms(back) {
+function showTerms(back, tab = null) {
   const mail = `<a href="mailto:${CONTACT}">${CONTACT}</a>`;
   render(`
     ${bar({ left: backBtn(), title: 'Условия' })}
@@ -607,7 +669,7 @@ function showTerms(back) {
         <h2>Связь</h2>
         <p>Вопросы, предложения и жалобы — на ${mail}.</p>
       </article>
-    </main>`);
+    </main>`, { tab });
   document.getElementById('back').onclick = () => navigate('back', back);
 }
 
@@ -687,18 +749,53 @@ function greeting() {
   return 'Доброй ночи';
 }
 
-function showHome() {
+// Карточка материала: кружок слева отмечает его пройденным (или возвращает обратно)
+function docCard(d, done) {
+  const ws = docWords(d);
+  const ds = summary(ws);
+  return `
+    <div class="doc${done ? ' done' : ''}" data-id="${esc(d.id)}">
+      <button class="doc-check" data-done="${esc(d.id)}" aria-pressed="${done}"
+        aria-label="${done ? 'Вернуть в материалы' : 'Отметить пройденным'}: ${esc(d.title)}">${ICON.check}</button>
+      <button class="row" data-doc="${esc(d.id)}">
+        <div>
+          <div class="row-title">${esc(d.title)}</div>
+          <div class="row-sub">${lessons(d.topics.length)} · ${terms(ds.total)}</div>
+        </div>
+        <div class="row-figure">${ds.total ? Math.round((ds.ok / ds.total) * 100) : 0}%<small>выучено</small></div>
+        ${docStrip(ws)}
+      </button>
+    </div>`;
+}
+
+// Материал переезжает в «Пройденное» или обратно: карточки плавно встают на новые места
+function toggleDone(id, on) {
+  const names = () => DOCUMENTS.map((d, i) => [`.doc[data-id="${CSS.escape(d.id)}"]`, 'doc-' + i]);
+  setDone(id, on);
+  navigate('reorder', () => showHome({ inPlace: true }), { from: names(), to: names() });
+}
+const markDone = id => {
+  toggleDone(id, true);
+  toast('Перенесено в пройденное', 'Вернуть', () => toggleDone(id, false));
+};
+
+const PASSED_OPEN = 'lv.passedOpen';
+function showHome({ inPlace = false } = {}) {
   quiz = null;
-  const all = DOCUMENTS.flatMap(docWords);
-  const s = summary(all);
+  const done = doneIds();
+  const active = DOCUMENTS.filter(d => !done.has(d.id));
+  const passed = DOCUMENTS.filter(d => done.has(d.id));
+  // Факт дня — только по материалам в работе: пройденные больше не нужны
+  const s = summary(active.flatMap(docWords));
   const fact = !DOCUMENTS.length
-    ? 'Документов пока нет. Когда тебе откроют документ, он появится здесь.'
-    : s.bad
-    ? `<b>${terms(s.bad)}</b> ${plural(s.bad, 'ждёт', 'ждут', 'ждут')} повторения. Они собраны в «Работе над ошибками» внутри документа.`
-    : s.ok
-      ? `Выучено <b>${s.ok} из ${terms(s.total)}</b>. Ошибок к повторению нет.`
-      : 'Выбери документ и пройди первый тест, прогресс появится здесь.';
-  const accuracy = s.answers ? Math.round((s.correct / s.answers) * 100) : null;
+    ? 'Материалов пока нет. Скоро свои файлы можно будет добавлять через «+» внизу.'
+    : !active.length
+      ? 'Все материалы пройдены. Любой можно вернуть из «Пройденного».'
+      : s.bad
+        ? `<b>${terms(s.bad)}</b> ${plural(s.bad, 'ждёт', 'ждут', 'ждут')} повторения. Они собраны в «Работе над ошибками» внутри материала.`
+        : s.ok
+          ? `Выучено <b>${s.ok} из ${terms(s.total)}</b>. Ошибок к повторению нет.`
+          : 'Выбери материал и пройди первый тест, прогресс появится здесь.';
 
   render(`
     ${bar({ brand: true })}
@@ -707,6 +804,75 @@ function showHome() {
         <h1 class="greeting">${greeting()}</h1>
         <p class="subline">${fact}</p>
       </div>
+      <section class="panel">
+        <div class="panel-head"><h2>Материалы</h2><span class="chip">${active.length}</span></div>
+        <div class="rows">
+          ${active.map(d => docCard(d, false)).join('') || `<p class="empty">${DOCUMENTS.length ? 'Всё пройдено.' : 'Материалов пока нет.'}</p>`}
+        </div>
+      </section>
+      ${passed.length ? `
+        <details class="panel passed" id="passed"${ls.get(PASSED_OPEN) === '1' ? ' open' : ''}>
+          <summary class="panel-head"><h2>Пройденное</h2><span class="chip">${passed.length}</span><span class="aside">${ICON.chevron}</span></summary>
+          <div class="rows">${passed.map(d => docCard(d, true)).join('')}</div>
+        </details>` : ''}
+    </main>`, { tab: 'home', root: true, inPlace });
+  $app.querySelectorAll('[data-doc]').forEach(b => {
+    b.onclick = () => navigate('forward', () => showDocument(b.dataset.doc));
+  });
+  $app.querySelectorAll('[data-done]').forEach(b => {
+    const id = b.dataset.done;
+    b.onclick = () => (done.has(id) ? toggleDone(id, false) : markDone(id));
+  });
+  const det = document.getElementById('passed');
+  if (det) det.ontoggle = () => ls.set(PASSED_OPEN, det.open ? '1' : '0');
+}
+
+// ---------- добавить материал ----------
+// Пока только описание: загрузка файлов и разбор — следующий шаг
+function showAdd() {
+  quiz = null;
+  render(`
+    ${bar({ title: 'Добавить' })}
+    <main class="page">
+      <div class="add">
+        <div class="head">
+          <h1 class="title">Новый материал</h1>
+          <p class="subline">Учебник, конспект или распечатка: из файла выделятся термины с переводом и соберутся уроки.</p>
+        </div>
+        <div class="drop" aria-disabled="true">
+          <span class="drop-icon">${ICON.upload}</span>
+          <b>Загрузка файлов скоро появится</b>
+          <span>PDF, Word или фото страниц</span>
+        </div>
+        <ol class="steps">
+          <li><b>Загружаешь файл.</b> Берётся только печатный текст, рукописные пометки не учитываются.</li>
+          <li><b>Мы выделяем термины</b> и подбираем к ним перевод.</li>
+          <li><b>Материал появляется на главной</b>, разбитый на уроки.</li>
+        </ol>
+        <p class="legal">Загружай только то, что вправе использовать для своей учёбы. <button class="text-btn" id="terms">Условия использования</button></p>
+      </div>
+    </main>`, { tab: 'add', root: true });
+  document.getElementById('terms').onclick = () => navigate('forward', () => showTerms(showAdd, 'add'));
+}
+
+// ---------- профиль ----------
+function showProfile() {
+  quiz = null;
+  const s = summary(DOCUMENTS.flatMap(docWords));
+  const accuracy = s.answers ? Math.round((s.correct / s.answers) * 100) : null;
+  const passed = DOCUMENTS.filter(d => doneIds().has(d.id)).length;
+  const email = user.email || '';
+
+  render(`
+    ${bar({ title: 'Профиль' })}
+    <main class="page">
+      <div class="head profile-head">
+        <div class="avatar" aria-hidden="true">${esc((email[0] || '?').toUpperCase())}</div>
+        <div>
+          <h1 class="title">${esc(email)}</h1>
+          <p class="subline">${materials(DOCUMENTS.length)} · ${terms(s.total)} · пройдено ${passed}</p>
+        </div>
+      </div>
       <section class="tiles" aria-label="Итоги">
         <div class="tile"><span class="tile-label">Выучено</span><span class="tile-value">${s.ok}<small> из ${s.total}</small></span><span class="tile-note">последний ответ верный</span></div>
         <div class="tile"><span class="tile-label">На повторение</span><span class="tile-value">${s.bad}</span><span class="tile-note">${s.bad ? 'ошибка в последнем ответе' : 'ошибок нет'}</span></div>
@@ -714,34 +880,15 @@ function showHome() {
         <div class="tile"><span class="tile-label">Точность</span><span class="tile-value${accuracy == null ? ' dash' : ''}">${accuracy == null ? '—' : accuracy + '%'}</span><span class="tile-note">${accuracy == null ? 'ещё не было ответов' : 'верных ответов'}</span></div>
       </section>
       <section class="panel">
-        <div class="panel-head"><h2>Документы</h2><span class="chip">${DOCUMENTS.length}</span></div>
         <div class="rows">
-          ${DOCUMENTS.map(d => {
-            const ws = docWords(d);
-            const ds = summary(ws);
-            return `
-              <button class="row" data-doc="${esc(d.id)}">
-                <div>
-                  <div class="row-title">${esc(d.title)}</div>
-                  <div class="row-sub">${lessons(d.topics.length)} · ${terms(ds.total)}</div>
-                </div>
-                <div class="row-figure">${Math.round((ds.ok / ds.total) * 100)}%<small>выучено</small></div>
-                ${docStrip(ws)}
-              </button>`;
-          }).join('') || '<p class="empty">Документов пока нет.</p>'}
+          <button class="row link" id="terms"><div class="row-title">Условия использования</div><span class="row-chev">${ICON.chevron}</span></button>
+          <a class="row link" href="mailto:${CONTACT}"><div><div class="row-title">Написать нам</div><div class="row-sub">${CONTACT}</div></div><span class="row-chev">${ICON.chevron}</span></a>
         </div>
       </section>
-      <footer class="account">
-        <span>${esc(user.email || '')}</span>
-        <button class="text-btn" id="logout">Выйти</button>
-      </footer>
-      <p class="legal"><button class="text-btn" id="terms">Условия использования</button></p>
-    </main>`);
-  $app.querySelectorAll('[data-doc]').forEach(b => {
-    b.onclick = () => navigate('forward', () => showDocument(b.dataset.doc));
-  });
+      <button class="btn logout" id="logout">Выйти</button>
+    </main>`, { tab: 'profile', root: true });
+  document.getElementById('terms').onclick = () => navigate('forward', () => showTerms(showProfile, 'profile'));
   document.getElementById('logout').onclick = logout;
-  document.getElementById('terms').onclick = () => navigate('forward', () => showTerms(showHome));
 }
 
 // ---------- документ: его уроки ----------
@@ -754,8 +901,10 @@ function showDocument(id) {
   const best = (t, dir) => progress.best[t.id + ':' + dir];
   const pct = v => (v == null ? '<span class="dash">—</span>' : v + '%');
 
+  const done = doneIds().has(d.id);
+
   render(`
-    ${bar({ left: backBtn('К документам'), title: 'Документы' })}
+    ${bar({ left: backBtn('К материалам'), title: 'Материалы' })}
     <main class="page">
       <div class="head">
         <h1 class="title">${esc(d.title)}</h1>
@@ -768,7 +917,7 @@ function showDocument(id) {
           <button class="row" data-topic="${MISTAKES + d.id}">
             <div>
               <div class="row-title">Повторить ${terms(ds.bad)}</div>
-              <div class="row-sub">С ошибкой в последнем ответе, из всех уроков документа</div>
+              <div class="row-sub">С ошибкой в последнем ответе, из всех уроков материала</div>
             </div>
             <div class="row-figure">${ds.bad}<small>${plural(ds.bad, 'термин', 'термина', 'терминов')}</small></div>
           </button>
@@ -791,8 +940,16 @@ function showDocument(id) {
         </div>
         ${legend(ds)}
       </section>
-    </main>`);
+      <p class="center"><button class="text-btn" id="done">${done ? 'Вернуть в материалы' : 'Отметить пройденным'}</button></p>
+    </main>`, { tab: 'home' });
   document.getElementById('back').onclick = () => navigate('back', showHome);
+  document.getElementById('done').onclick = () => {
+    setDone(d.id, !done);
+    navigate('back', () => {
+      showHome();
+      if (!done) toast('Перенесено в пройденное', 'Вернуть', () => toggleDone(d.id, false));
+    });
+  };
   $app.querySelectorAll('[data-topic]').forEach(b => {
     b.onclick = () => navigate('forward', () => showTopic(b.dataset.topic));
   });
@@ -855,7 +1012,7 @@ function showTopic(id) {
           ${t.words.length > GLOSSARY_CAP ? `<button class="btn small more" id="more">Показать все ${t.words.length}</button>` : ''}
         </section>
       </div>
-    </main>`);
+    </main>`, { tab: 'home' });
 
   setupSeg('dir', prefs.dir, v => { prefs.dir = v; });
   setupSeg('len', String(len), v => { len = +v; prefs.len = len; });
@@ -899,6 +1056,7 @@ function renderQuestion() {
   const shown = toRu ? w.ru : w.en; // правильный ответ показываем по самому термину
   const lang = toRu ? 'ru' : 'en';
 
+  $app.classList.remove('with-tabs');
   $app.innerHTML = `
     <header class="bar">
       <div><button class="icon-btn" id="quit" aria-label="Выйти из теста">${ICON.close}</button></div>
