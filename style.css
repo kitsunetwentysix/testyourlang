@@ -7,26 +7,26 @@
 @font-face { font-family: "Literata"; font-weight: 400 600; font-display: swap; src: url("vendor/fonts/literata-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 
 :root {
-  --chrome: #f4f5f2;   /* top bar: the paper stone */
-  --ground: #ffffff;   /* the sheet */
-  --surface: #f4f5f2;  /* panels, one step toward the textbook's paper */
-  --raised: #ffffff;   /* row cards inside a panel */
-  --border: #e4e5e0;
-  --rule: #ecede8;
-  --control: #d3d4cf;
-  --text: #1f201d;
-  --muted: #5f605c;
-  --accent: #1b6e66;   /* data: learned terms, progress */
-  --primary: #1f201d;  /* the one filled action */
-  --primary-hover: #000000;
+  --chrome: #e5e1d8;   /* «Юридическая библиотека»: шапка и панели цвета кости */
+  --ground: #efeeea;   /* страница: светлая кость низкой насыщенности (не «крем») */
+  --surface: #e5e1d8;  /* панели на шаг темнее страницы */
+  --raised: #f8f6f1;   /* row cards inside a panel */
+  --border: #d5cfc3;
+  --rule: #dcd7cc;
+  --control: #bdb5a6;
+  --text: #2a1d17;
+  --muted: #62534a;
+  --accent: #456f3a;   /* зелёный библиотечной лампы, только на данных: выученные термины, прогресс */
+  --primary: #2a1d17;  /* the one filled action */
+  --primary-hover: #1a110c;
   --on-primary: #ffffff;
-  --positive: #2e7d32;
-  --negative: #b42318;
-  --cell-empty: #dcddd8;
-  --active: #e3e4df;        /* выбранная вкладка: нейтральная плашка на тоне шапки */
-  --accent-soft: #dcecea;   /* бледный тон акцента: аватар */
-  --pill-positive-bg: #dcfae5; --pill-positive-ink: #04250e;
-  --pill-negative-bg: #fdecea; --pill-negative-ink: #7a1d14;
+  --positive: #456f3a;
+  --negative: #a83221;
+  --cell-empty: #d2ccbe;
+  --active: #d7d1c4;        /* выбранная вкладка: нейтральная плашка на тоне шапки */
+  --accent-soft: #dce5d4;   /* бледный тон акцента: аватар */
+  --pill-positive-bg: #dce5d4; --pill-positive-ink: #1f3318;
+  --pill-negative-bg: #f6e2db; --pill-negative-ink: #7a1d14;
   --pill-warning-bg: #fffbeb; --pill-warning-ink: #92400e;
   --radius-card: 22px;
   --radius-row: 14px;
@@ -49,25 +49,25 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --chrome: #111211;
-    --ground: #111211;
-    --surface: #1b1c1b;
-    --raised: #242524;
-    --border: #2e2f2d;
-    --rule: #272827;
-    --control: #4a4b48;
-    --text: #f2f2ef;
-    --muted: #b4b4b0;
-    --accent: #5fb8ac;
-    --primary: #f2f2ef;
+    --chrome: #17130f;
+    --ground: #17130f;
+    --surface: #211c17;
+    --raised: #2a241e;
+    --border: #3a322a;
+    --rule: #2f2822;
+    --control: #574d42;
+    --text: #ece6dc;
+    --muted: #b3a796;
+    --accent: #8fb77f;
+    --primary: #ece6dc;
     --primary-hover: #ffffff;
-    --on-primary: #111211;
-    --positive: #6cc58f;
-    --negative: #f0776a;
-    --cell-empty: #3a3b39;
-    --active: #2a2b29;
-    --accent-soft: #1d3331;
-    --pill-positive-bg: #172a1d; --pill-positive-ink: #8fd8a9;
+    --on-primary: #17130f;
+    --positive: #8fb77f;
+    --negative: #ef7b68;
+    --cell-empty: #3b342c;
+    --active: #332c25;
+    --accent-soft: #24301f;
+    --pill-positive-bg: #24301f; --pill-positive-ink: #a9cc9a;
     --pill-negative-bg: #2c1a18; --pill-negative-ink: #f3a197;
     --pill-warning-bg: #2b2210; --pill-warning-ink: #e9c46a;
     color-scheme: dark;
